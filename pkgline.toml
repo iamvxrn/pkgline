@@ -1,0 +1,9 @@
+[package]
+name = "pkgline"
+version = "0.1.0"
+language = "go"
+executable = "pkgline"
+
+[scripts]
+install = "install.sh"
+uninstall = "uninstall.sh"
