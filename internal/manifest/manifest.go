@@ -54,7 +54,7 @@ func (m *Manifest) GetLanguage() string {
 // IsNative returns true if language is a supported native language ("go", "rust", "cbld", "c", "cpp").
 func (m *Manifest) IsNative() bool {
 	lang := m.GetLanguage()
-	return lang == "go"
+	return lang == "go" || lang == "rust" || lang == "cbld" || lang == "c" || lang == "cpp"
 }
 
 // Validate ensures manifest contains valid metadata and install instructions.
@@ -68,11 +68,11 @@ func (m *Manifest) Validate() error {
 	hasInstallScript := strings.TrimSpace(m.Scripts.Install) != ""
 
 	if lang != "" && !hasNative {
-		return fmt.Errorf("pkgline.toml: unsupported language '%s' (supported: go)", m.Package.Language)
+		return fmt.Errorf("pkgline.toml: unsupported language '%s' (supported: go, rust, cbld, c, cpp)", m.Package.Language)
 	}
 
 	if !hasNative && !hasInstallScript {
-		return fmt.Errorf("pkgline.toml: package '%s' provides neither language = 'go' nor an install script", m.Package.Name)
+		return fmt.Errorf("pkgline.toml: package '%s' provides neither a supported language ('go', 'rust', 'cbld', 'c', 'cpp') nor an install script", m.Package.Name)
 	}
 
 	if m.GetExecutable() == "" {
