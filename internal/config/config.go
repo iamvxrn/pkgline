@@ -30,7 +30,12 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		BinDir:  defaultBinDir,
 		AppsDir: defaultAppsDir,
-		Aliases: map[string]string{},
+		Aliases: map[string]string{
+			"cbld": "gh:iamvxrn/cbld",
+			"muth":  "gh:iamvxrn/muth",
+			"runa":  "gh:iamvxrn/runa",
+			"pkgline":  "gh:iamvxrn/pkgline",
+		},
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
