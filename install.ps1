@@ -7,7 +7,7 @@ $Ext = "zip"
 
 $Tag = (Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -ErrorAction SilentlyContinue).tag_name
 if ([string]::IsNullOrWhiteSpace($Tag)) {
-    $Tag = "v0.1.0"
+    $Tag = "v0.2.0"
 }
 
 $Url = "https://github.com/$Repo/releases/download/$Tag/${Binary}_${Target}.${Ext}"
