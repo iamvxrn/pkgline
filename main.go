@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,16 +12,16 @@ import (
 	"pkgline/internal/ui"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func printUsage() {
 	banner := `Pkgline - Decentralized, User-Space Package Manager
 
 Usage:
-  pkgline <command> [arguments]
+  pkgline [--json] <command> [arguments]
 
 Commands:
-  install, i <uri>    Install package from Git URL, gh:user/repo, alias, or local path
+  install, i <uri>    Install package from Git URL, gh:/gl:/cb:/sh: shorthand, alias, or local path
   remove, rm <name>   Remove an installed package and its linked binary
   rollback <name>     Restore previous backup executable (.bak) for package
   sync, update [name] Pull latest changes and rebuild package(s) if updated
@@ -29,12 +30,31 @@ Commands:
   completion <shell>  Generate shell auto-completion script (bash, zsh, fish)
   version             Print Pkgline version
   help                Show this help message
+
+Global flags:
+  --json              Machine-readable output (list, doctor, version)
 `
 
 	fmt.Print(banner)
 }
 
+func stripJSONFlag(args []string) (bool, []string) {
+	jsonOut := false
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "--json" {
+			jsonOut = true
+			continue
+		}
+		out = append(out, a)
+	}
+	return jsonOut, out
+}
+
 func main() {
+	jsonOut, args := stripJSONFlag(os.Args)
+	os.Args = args
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(0)
@@ -115,13 +135,13 @@ func main() {
 			ui.LogError("%v", err)
 			os.Exit(1)
 		}
-		if err := installer.List(); err != nil {
+		if err := installer.List(jsonOut); err != nil {
 			ui.LogError("%v", err)
 			os.Exit(1)
 		}
 
 	case "doctor":
-		runDoctor()
+		runDoctor(jsonOut)
 
 	case "completion":
 		shell := "zsh"
@@ -131,7 +151,11 @@ func main() {
 		printCompletion(shell)
 
 	case "version", "-v", "--version":
-		fmt.Printf("Pkgline v%s\n", version)
+		if jsonOut {
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"version": version})
+		} else {
+			fmt.Printf("Pkgline v%s\n", version)
+		}
 
 	case "help", "-h", "--help":
 		printUsage()
@@ -143,14 +167,7 @@ func main() {
 	}
 }
 
-func runDoctor() {
-	ui.LogInfo("Running Pkgline system diagnostics...")
-	fmt.Printf("  • Pkgline Version: v%s\n", version)
-	fmt.Printf("  • Pkgline Root:    %s\n", path.PkglineRoot())
-	fmt.Printf("  • Bin Dir:      %s\n", path.BinDir())
-	fmt.Printf("  • Apps Dir:     %s\n", path.AppsDir())
-	fmt.Printf("  • Config File:  %s\n", path.ConfigPath())
-
+func runDoctor(jsonOut bool) {
 	binDir := path.BinDir()
 	pathEnv := os.Getenv("PATH")
 	inPath := false
@@ -160,6 +177,28 @@ func runDoctor() {
 			break
 		}
 	}
+
+	if jsonOut {
+		payload := map[string]any{
+			"version":     version,
+			"root":        path.PkglineRoot(),
+			"bin_dir":     binDir,
+			"apps_dir":    path.AppsDir(),
+			"config":      path.ConfigPath(),
+			"bin_in_path": inPath,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(payload)
+		return
+	}
+
+	ui.LogInfo("Running Pkgline system diagnostics...")
+	fmt.Printf("  • Pkgline Version: v%s\n", version)
+	fmt.Printf("  • Pkgline Root:    %s\n", path.PkglineRoot())
+	fmt.Printf("  • Bin Dir:      %s\n", binDir)
+	fmt.Printf("  • Apps Dir:     %s\n", path.AppsDir())
+	fmt.Printf("  • Config File:  %s\n", path.ConfigPath())
 
 	if inPath {
 		ui.LogSuccess("PATH configuration is correct (%s is in PATH).", binDir)
@@ -211,4 +250,3 @@ complete -c pkgline -n "not __fish_seen_subcommand_from install remove rollback 
 		os.Exit(1)
 	}
 }
-

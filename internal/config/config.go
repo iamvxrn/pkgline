@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -17,19 +16,11 @@ type Config struct {
 }
 
 func LoadConfig() (*Config, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user home directory: %w", err)
-	}
-
 	configPath := path.ConfigPath()
 
-	defaultBinDir := filepath.Join(home, ".pkgline", "bin")
-	defaultAppsDir := filepath.Join(home, ".pkgline", "apps")
-
 	cfg := &Config{
-		BinDir:  defaultBinDir,
-		AppsDir: defaultAppsDir,
+		BinDir:  path.BinDir(),
+		AppsDir: path.AppsDir(),
 		Aliases: map[string]string{
 			"cbld": "gh:iamvxrn/cbld",
 			"muth":  "gh:iamvxrn/muth",
@@ -71,20 +62,34 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
-// ResolveURI converts aliases or shorthand syntax (e.g. gh:owner/repo) into full Git URIs.
+// ResolveURI converts aliases or shorthand syntax into full Git URIs.
+//
+// Prefixes: gh: GitHub, gl: GitLab, cb: Codeberg, sh: Sourcehut.
+// Bare owner/repo is GitHub. Full https:// and git@ URLs, and local paths, pass through.
 func (c *Config) ResolveURI(input string) string {
 	input = strings.TrimSpace(input)
 	if resolved, ok := c.Aliases[input]; ok {
 		input = strings.TrimSpace(resolved)
 	}
 
-	// Handle gh:owner/repo format
-	if strings.HasPrefix(input, "gh:") {
-		repoPath := strings.TrimPrefix(input, "gh:")
-		return fmt.Sprintf("https://github.com/%s.git", strings.Trim(repoPath, "/"))
+	if rest, ok := strings.CutPrefix(input, "gh:"); ok {
+		return fmt.Sprintf("https://github.com/%s.git", strings.Trim(rest, "/"))
+	}
+	if rest, ok := strings.CutPrefix(input, "gl:"); ok {
+		return fmt.Sprintf("https://gitlab.com/%s.git", strings.Trim(rest, "/"))
+	}
+	if rest, ok := strings.CutPrefix(input, "cb:"); ok {
+		return fmt.Sprintf("https://codeberg.org/%s.git", strings.Trim(rest, "/"))
+	}
+	if rest, ok := strings.CutPrefix(input, "sh:"); ok {
+		rest = strings.Trim(rest, "/")
+		if !strings.HasPrefix(rest, "~") {
+			rest = "~" + rest
+		}
+		return fmt.Sprintf("https://git.sr.ht/%s.git", rest)
 	}
 
-	// Handle owner/repo format if not local path or URL
+	// Bare owner/repo → GitHub, unless it looks like a URL or local path.
 	if !strings.Contains(input, "://") && !strings.HasPrefix(input, "git@") && !strings.HasPrefix(input, "/") && !strings.HasPrefix(input, ".") && strings.Count(input, "/") == 1 {
 		return fmt.Sprintf("https://github.com/%s.git", input)
 	}

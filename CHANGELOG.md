@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0] - 2026-08-26
+
+Forge prefixes, machine-readable output, and Make/CMake builds.
+
+- `gl:`, `cb:`, and `sh:` URI prefixes (GitLab, Codeberg, Sourcehut)
+- `--json` on `list`, `doctor`, and `version`
+- Native `make` / `cmake` languages; inferred from Makefile / CMakeLists.txt when `language` is omitted
+- Tests isolate state with `PKGLINE_ROOT` (and honor `PKGLINE_BIN` / `PKGLINE_APPS`)
+
 ## [0.2.0] - 2026-08-25
 
 Expanded build support, lifecycle commands, and documentation site.

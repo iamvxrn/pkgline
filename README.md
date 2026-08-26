@@ -8,8 +8,8 @@ A tool for downloading and building executables from Git repositories into the u
 ## Features
 
 - Installs binaries to `~/.pkgline/bin` (add it to your `PATH`).
-- Resolves GitHub shorthand (`gh:user/repo`, `owner/repo`) and full Git URLs.
-- Native builds for Go, Rust, and cbld/C/C++; custom `install.sh` scripts as fallback.
+- Resolves GitHub / GitLab / Codeberg / Sourcehut shorthand (`gh:`, `gl:`, `cb:`, `sh:`) and full Git URLs.
+- Native builds for Go, Rust, cbld/C/C++, Make, and CMake; custom `install.sh` scripts as fallback.
 - Backup binaries (`.bak`) with `rollback` after updates.
 
 ## Quick Start

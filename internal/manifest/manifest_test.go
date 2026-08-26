@@ -55,6 +55,26 @@ language = "c"
 			wantErr: false,
 		},
 		{
+			name: "Valid Make Native",
+			toml: `
+[package]
+name = "my-make-tool"
+version = "0.1.0"
+language = "make"
+`,
+			wantErr: false,
+		},
+		{
+			name: "Valid CMake Native",
+			toml: `
+[package]
+name = "my-cmake-tool"
+version = "0.1.0"
+language = "cmake"
+`,
+			wantErr: false,
+		},
+		{
 			name: "Valid Script Fallback",
 			toml: `
 [package]
@@ -142,5 +162,51 @@ func TestDefaultExecutableName(t *testing.T) {
 	}
 	if m.GetExecutable() != expectedCustom {
 		t.Errorf("Expected custom executable '%s', got '%s'", expectedCustom, m.GetExecutable())
+	}
+}
+
+func TestLoadFromDirInfersCMake(t *testing.T) {
+	dir := t.TempDir()
+	toml := `
+[package]
+name = "inferred"
+version = "0.1.0"
+executable = "inferred"
+`
+	if err := os.WriteFile(filepath.Join(dir, "pkgline.toml"), []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "CMakeLists.txt"), []byte("project(inferred)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := LoadFromDir(dir)
+	if err != nil {
+		t.Fatalf("LoadFromDir: %v", err)
+	}
+	if m.GetLanguage() != "cmake" {
+		t.Errorf("expected cmake, got %q", m.GetLanguage())
+	}
+}
+
+func TestLoadFromDirInfersMake(t *testing.T) {
+	dir := t.TempDir()
+	toml := `
+[package]
+name = "inferred-make"
+version = "0.1.0"
+executable = "inferred-make"
+`
+	if err := os.WriteFile(filepath.Join(dir, "pkgline.toml"), []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Makefile"), []byte("all:\n\ttrue\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := LoadFromDir(dir)
+	if err != nil {
+		t.Fatalf("LoadFromDir: %v", err)
+	}
+	if m.GetLanguage() != "make" {
+		t.Errorf("expected make, got %q", m.GetLanguage())
 	}
 }

@@ -20,7 +20,7 @@ uninstall = "uninstall.sh"
 
 - `name` — package name (required)
 - `version` — package version string
-- `language` — `go`, `rust`, `cbld`, `c`, or `cpp` for native builds
+- `language` — `go`, `rust`, `cbld`, `c`, `cpp`, `make`, or `cmake`. If omitted and there is no install script, Pkgline infers `cmake` from `CMakeLists.txt` or `make` from `Makefile`.
 - `executable` — binary name (defaults to `name`)
 
 ## `[scripts]`

@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,8 +11,8 @@ import (
 
 func TestSmartInstallationGo(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("PKGLINE_BIN", filepath.Join(tmpDir, ".pkgline", "bin"))
-	t.Setenv("PKGLINE_APPS", filepath.Join(tmpDir, ".pkgline", "apps"))
+	t.Setenv("PKGLINE_ROOT", filepath.Join(tmpDir, ".pkgline"))
+	t.Setenv("PKGLINE_CONFIG_DIR", filepath.Join(tmpDir, ".config", "pkgline"))
 
 	installer, err := NewInstaller()
 	if err != nil {
@@ -78,8 +77,8 @@ func main() { fmt.Println("mock go tool") }
 
 func TestSmartInstallationScriptFallback(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("PKGLINE_BIN", filepath.Join(tmpDir, ".pkgline", "bin"))
-	t.Setenv("PKGLINE_APPS", filepath.Join(tmpDir, ".pkgline", "apps"))
+	t.Setenv("PKGLINE_ROOT", filepath.Join(tmpDir, ".pkgline"))
+	t.Setenv("PKGLINE_CONFIG_DIR", filepath.Join(tmpDir, ".config", "pkgline"))
 
 	installer, err := NewInstaller()
 	if err != nil {
@@ -154,8 +153,8 @@ rm -f "$PKGLINE_BIN/$PKGLINE_EXECUTABLE"
 
 func TestSmartInstallationValidationFailure(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("PKGLINE_BIN", filepath.Join(tmpDir, ".pkgline", "bin"))
-	t.Setenv("PKGLINE_APPS", filepath.Join(tmpDir, ".pkgline", "apps"))
+	t.Setenv("PKGLINE_ROOT", filepath.Join(tmpDir, ".pkgline"))
+	t.Setenv("PKGLINE_CONFIG_DIR", filepath.Join(tmpDir, ".config", "pkgline"))
 
 	installer, err := NewInstaller()
 	if err != nil {
@@ -186,6 +185,7 @@ language = "python"
 
 func TestConfigResolveURI(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("PKGLINE_ROOT", filepath.Join(tmpDir, ".pkgline"))
 	t.Setenv("PKGLINE_CONFIG_DIR", filepath.Join(tmpDir, ".config", "pkgline"))
 
 	cfgPath := path.ConfigPath()
@@ -232,5 +232,16 @@ mytool = "gh:foo/bar"
 		t.Errorf("gh: resolution failed: expected %s, got %s", expectedGH, resolvedGH)
 	}
 
-	fmt.Println("Config resolution tests passed successfully.")
+	if got := installer.cfg.ResolveURI("gl:group/proj"); got != "https://gitlab.com/group/proj.git" {
+		t.Errorf("gl: resolution failed: got %s", got)
+	}
+	if got := installer.cfg.ResolveURI("cb:user/repo"); got != "https://codeberg.org/user/repo.git" {
+		t.Errorf("cb: resolution failed: got %s", got)
+	}
+	if got := installer.cfg.ResolveURI("sh:user/repo"); got != "https://git.sr.ht/~user/repo.git" {
+		t.Errorf("sh: resolution failed: got %s", got)
+	}
+	if got := installer.cfg.ResolveURI("sh:~already/repo"); got != "https://git.sr.ht/~already/repo.git" {
+		t.Errorf("sh:~ resolution failed: got %s", got)
+	}
 }

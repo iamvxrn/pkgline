@@ -6,7 +6,7 @@
 pkgline install <uri>
 ```
 
-URI formats: `gh:user/repo`, `user/repo` (GitHub), full `https://` or `git@` URLs, or a local path.
+URI formats: `gh:user/repo`, `gl:group/repo`, `cb:user/repo`, `sh:user/repo`, `user/repo` (GitHub), full `https://` or `git@` URLs, or a local path.
 
 ## `remove`
 
@@ -32,12 +32,21 @@ pkgline sync [package-name]
 
 ```bash
 pkgline list
+pkgline list --json
 ```
 
 ## `doctor`
 
 ```bash
 pkgline doctor
+pkgline doctor --json
+```
+
+## `version`
+
+```bash
+pkgline version
+pkgline version --json
 ```
 
 ## `completion`

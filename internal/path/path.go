@@ -20,13 +20,19 @@ func PkglineRoot() string {
 	return filepath.Join(home, ".pkgline")
 }
 
-// BinDir returns ~/.pkgline/bin
+// BinDir returns ~/.pkgline/bin, or PKGLINE_BIN when set.
 func BinDir() string {
+	if env := os.Getenv("PKGLINE_BIN"); env != "" {
+		return ExpandPath(env)
+	}
 	return filepath.Join(PkglineRoot(), "bin")
 }
 
-// AppsDir returns ~/.pkgline/apps
+// AppsDir returns ~/.pkgline/apps, or PKGLINE_APPS when set.
 func AppsDir() string {
+	if env := os.Getenv("PKGLINE_APPS"); env != "" {
+		return ExpandPath(env)
+	}
 	return filepath.Join(PkglineRoot(), "apps")
 }
 

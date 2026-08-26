@@ -1,12 +1,15 @@
 # URI Formats
 
-Pkgline resolves package sources from Git URLs, GitHub shorthand, or local paths.
+Pkgline resolves package sources from Git URLs, forge shorthand, aliases, or local paths.
 
 | Input | Resolved to |
 |---|---|
 | `gh:user/repo` | `https://github.com/user/repo.git` |
+| `gl:group/repo` | `https://gitlab.com/group/repo.git` |
+| `cb:user/repo` | `https://codeberg.org/user/repo.git` |
+| `sh:user/repo` | `https://git.sr.ht/~user/repo.git` |
 | `user/repo` | GitHub when not a local path |
 | `https://...` / `git@...` | used as-is |
 | `./path` / `/absolute/path` | local directory copy |
 
-Other forges (GitLab, Codeberg, Sourcehut) work via full `https://` or `git@` clone URLs. Short prefixes like `gl:` are not implemented yet.
+`sh:~user/repo` is accepted too (the `~` is not doubled).

@@ -51,10 +51,15 @@ func (m *Manifest) GetLanguage() string {
 	return strings.ToLower(strings.TrimSpace(m.Package.Language))
 }
 
-// IsNative returns true if language is a supported native language ("go", "rust", "cbld", "c", "cpp").
+// IsNative returns true if language is a supported native builder.
 func (m *Manifest) IsNative() bool {
 	lang := m.GetLanguage()
-	return lang == "go" || lang == "rust" || lang == "cbld" || lang == "c" || lang == "cpp"
+	switch lang {
+	case "go", "rust", "cbld", "c", "cpp", "make", "cmake":
+		return true
+	default:
+		return false
+	}
 }
 
 // Validate ensures manifest contains valid metadata and install instructions.
@@ -68,11 +73,11 @@ func (m *Manifest) Validate() error {
 	hasInstallScript := strings.TrimSpace(m.Scripts.Install) != ""
 
 	if lang != "" && !hasNative {
-		return fmt.Errorf("pkgline.toml: unsupported language '%s' (supported: go, rust, cbld, c, cpp)", m.Package.Language)
+		return fmt.Errorf("pkgline.toml: unsupported language '%s' (supported: go, rust, cbld, c, cpp, make, cmake)", m.Package.Language)
 	}
 
 	if !hasNative && !hasInstallScript {
-		return fmt.Errorf("pkgline.toml: package '%s' provides neither a supported language ('go', 'rust', 'cbld', 'c', 'cpp') nor an install script", m.Package.Name)
+		return fmt.Errorf("pkgline.toml: package '%s' provides neither a supported language ('go', 'rust', 'cbld', 'c', 'cpp', 'make', 'cmake') nor an install script", m.Package.Name)
 	}
 
 	if m.GetExecutable() == "" {
@@ -84,25 +89,50 @@ func (m *Manifest) Validate() error {
 
 // LoadFromFile parses a pkgline.toml file at the given path.
 func LoadFromFile(filePath string) (*Manifest, error) {
+	m, err := parseFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.Validate(); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// LoadFromDir looks for pkgline.toml in directory and parses it.
+// If language is unset, infers make/cmake from Makefile or CMakeLists.txt.
+func LoadFromDir(dir string) (*Manifest, error) {
+	target := filepath.Join(dir, ManifestFileName)
+	m, err := parseFile(target)
+	if err != nil {
+		return nil, err
+	}
+	if m.GetLanguage() == "" && strings.TrimSpace(m.Scripts.Install) == "" {
+		if fileExists(filepath.Join(dir, "CMakeLists.txt")) {
+			m.Package.Language = "cmake"
+		} else if fileExists(filepath.Join(dir, "Makefile")) || fileExists(filepath.Join(dir, "makefile")) {
+			m.Package.Language = "make"
+		}
+	}
+	if err := m.Validate(); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func parseFile(filePath string) (*Manifest, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read manifest file %s: %w", filePath, err)
 	}
-
 	var m Manifest
 	if err := toml.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("failed to parse manifest TOML %s: %w", filePath, err)
 	}
-
-	if err := m.Validate(); err != nil {
-		return nil, err
-	}
-
 	return &m, nil
 }
 
-// LoadFromDir looks for pkgline.toml in directory and parses it.
-func LoadFromDir(dir string) (*Manifest, error) {
-	target := filepath.Join(dir, ManifestFileName)
-	return LoadFromFile(target)
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
 }

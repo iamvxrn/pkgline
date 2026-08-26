@@ -33,7 +33,7 @@ esac
 
 TAG=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 if [ -z "$TAG" ]; then
-    TAG="v0.2.0"
+    TAG="v0.3.0"
 fi
 
 FILENAME="${BINARY}_${OS}_${ARCH}.tar.gz"

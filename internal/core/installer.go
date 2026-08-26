@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -281,10 +282,19 @@ func (ins *Installer) Sync(targetPkg string) error {
 }
 
 // List prints installed package inventory.
-func (ins *Installer) List() error {
+func (ins *Installer) List(asJSON bool) error {
 	packages, err := ins.store.List()
 	if err != nil {
 		return err
+	}
+
+	if asJSON {
+		if packages == nil {
+			packages = []db.PackageRecord{}
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(packages)
 	}
 
 	if len(packages) == 0 {

@@ -60,7 +60,29 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest) (*BuildResult, error)
 			return nil, fmt.Errorf("Cbld build failed: %w", err)
 		}
 		return &BuildResult{
-			InstallType:     "native-cbld",
+			InstallType:    "native-cbld",
+			ExecutablePath: targetBinPath,
+			ExecutableName: execName,
+		}, nil
+
+	case "make":
+		ui.LogInfo("Building Make package '%s'...", m.Package.Name)
+		if err := buildMakePackage(appRoot, execName, targetBinPath); err != nil {
+			return nil, fmt.Errorf("Make build failed: %w", err)
+		}
+		return &BuildResult{
+			InstallType:    "native-make",
+			ExecutablePath: targetBinPath,
+			ExecutableName: execName,
+		}, nil
+
+	case "cmake":
+		ui.LogInfo("Building CMake package '%s'...", m.Package.Name)
+		if err := buildCMakePackage(appRoot, execName, targetBinPath); err != nil {
+			return nil, fmt.Errorf("CMake build failed: %w", err)
+		}
+		return &BuildResult{
+			InstallType:    "native-cmake",
 			ExecutablePath: targetBinPath,
 			ExecutableName: execName,
 		}, nil
@@ -169,6 +191,68 @@ func buildCbldPackage(appRoot, execName, targetBinPath string) error {
 	}
 
 	return nil
+}
+
+func buildMakePackage(appRoot, execName, targetBinPath string) error {
+	cmd := exec.Command("make")
+	cmd.Dir = appRoot
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s (%w)", strings.TrimSpace(stderr.String()), err)
+	}
+	return copyBuiltBinary(appRoot, execName, targetBinPath)
+}
+
+func buildCMakePackage(appRoot, execName, targetBinPath string) error {
+	configure := exec.Command("cmake", "-S", ".", "-B", "build", "-DCMAKE_BUILD_TYPE=Release")
+	configure.Dir = appRoot
+	var stdout, stderr bytes.Buffer
+	configure.Stdout = &stdout
+	configure.Stderr = &stderr
+	if err := configure.Run(); err != nil {
+		return fmt.Errorf("cmake configure: %s (%w)", strings.TrimSpace(stderr.String()), err)
+	}
+
+	build := exec.Command("cmake", "--build", "build", "--config", "Release")
+	build.Dir = appRoot
+	stdout.Reset()
+	stderr.Reset()
+	build.Stdout = &stdout
+	build.Stderr = &stderr
+	if err := build.Run(); err != nil {
+		return fmt.Errorf("cmake build: %s (%w)", strings.TrimSpace(stderr.String()), err)
+	}
+
+	buildDir := filepath.Join(appRoot, "build")
+	if err := copyBuiltBinary(buildDir, execName, targetBinPath); err == nil {
+		return nil
+	}
+	return copyBuiltBinary(appRoot, execName, targetBinPath)
+}
+
+func copyBuiltBinary(searchRoot, execName, targetBinPath string) error {
+	candidates := []string{
+		filepath.Join(searchRoot, execName),
+		filepath.Join(searchRoot, "Release", execName),
+		filepath.Join(searchRoot, "release", execName),
+	}
+	var src string
+	for _, p := range candidates {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			src = p
+			break
+		}
+	}
+	if src == "" {
+		return fmt.Errorf("expected compiled binary '%s' not found under %s", execName, searchRoot)
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("failed to read compiled binary: %w", err)
+	}
+	return os.WriteFile(targetBinPath, data, 0755)
 }
 
 // runInstallScript executes script.install with environment variables
