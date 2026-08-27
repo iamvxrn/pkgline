@@ -15,7 +15,7 @@ import (
 
 // BuildResult contains metadata about the build process.
 type BuildResult struct {
-	InstallType     string
+	InstallType    string
 	ExecutablePath string
 	ExecutableName string
 }
@@ -35,10 +35,10 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest) (*BuildResult, error)
 	case "go":
 		ui.LogInfo("Building Go native package '%s'...", m.Package.Name)
 		if err := buildGoPackage(appRoot, targetBinPath); err != nil {
-			return nil, fmt.Errorf("Go build failed: %w", err)
+			return nil, fmt.Errorf("go build failed: %w", err)
 		}
 		return &BuildResult{
-			InstallType:     "native-go",
+			InstallType:    "native-go",
 			ExecutablePath: targetBinPath,
 			ExecutableName: execName,
 		}, nil
@@ -46,10 +46,10 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest) (*BuildResult, error)
 	case "rust":
 		ui.LogInfo("Building Rust native package '%s'...", m.Package.Name)
 		if err := buildRustPackage(appRoot, execName, targetBinPath); err != nil {
-			return nil, fmt.Errorf("Rust build failed: %w", err)
+			return nil, fmt.Errorf("rust build failed: %w", err)
 		}
 		return &BuildResult{
-			InstallType:     "native-rust",
+			InstallType:    "native-rust",
 			ExecutablePath: targetBinPath,
 			ExecutableName: execName,
 		}, nil
@@ -57,7 +57,7 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest) (*BuildResult, error)
 	case "cbld", "c", "cpp":
 		ui.LogInfo("Building Cbld C/C++ native package '%s'...", m.Package.Name)
 		if err := buildCbldPackage(appRoot, execName, targetBinPath); err != nil {
-			return nil, fmt.Errorf("Cbld build failed: %w", err)
+			return nil, fmt.Errorf("cbld build failed: %w", err)
 		}
 		return &BuildResult{
 			InstallType:    "native-cbld",
@@ -68,7 +68,7 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest) (*BuildResult, error)
 	case "make":
 		ui.LogInfo("Building Make package '%s'...", m.Package.Name)
 		if err := buildMakePackage(appRoot, execName, targetBinPath); err != nil {
-			return nil, fmt.Errorf("Make build failed: %w", err)
+			return nil, fmt.Errorf("make build failed: %w", err)
 		}
 		return &BuildResult{
 			InstallType:    "native-make",
@@ -79,7 +79,7 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest) (*BuildResult, error)
 	case "cmake":
 		ui.LogInfo("Building CMake package '%s'...", m.Package.Name)
 		if err := buildCMakePackage(appRoot, execName, targetBinPath); err != nil {
-			return nil, fmt.Errorf("CMake build failed: %w", err)
+			return nil, fmt.Errorf("cmake build failed: %w", err)
 		}
 		return &BuildResult{
 			InstallType:    "native-cmake",
@@ -100,7 +100,7 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest) (*BuildResult, error)
 		}
 
 		return &BuildResult{
-			InstallType:     "script",
+			InstallType:    "script",
 			ExecutablePath: targetBinPath,
 			ExecutableName: execName,
 		}, nil

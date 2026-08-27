@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+CI, lint, and tests: gofmt, golangci-lint, govulncheck, and unit coverage for config, db, git, path, ui, and the CLI helpers.
+
 ## [0.3.0] - 2026-08-26
 
 Forge prefixes, machine-readable output, and Make/CMake builds.

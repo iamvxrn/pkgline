@@ -22,10 +22,10 @@ func LoadConfig() (*Config, error) {
 		BinDir:  path.BinDir(),
 		AppsDir: path.AppsDir(),
 		Aliases: map[string]string{
-			"cbld": "gh:iamvxrn/cbld",
-			"muth":  "gh:iamvxrn/muth",
-			"runa":  "gh:iamvxrn/runa",
-			"pkgline":  "gh:iamvxrn/pkgline",
+			"cbld":    "gh:iamvxrn/cbld",
+			"muth":    "gh:iamvxrn/muth",
+			"runa":    "gh:iamvxrn/runa",
+			"pkgline": "gh:iamvxrn/pkgline",
 		},
 	}
 

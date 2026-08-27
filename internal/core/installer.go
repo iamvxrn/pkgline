@@ -45,7 +45,7 @@ func (ins *Installer) Install(rawURI string) error {
 
 	// Stage clone in cache
 	stagingDir := filepath.Join(path.CacheDir(), fmt.Sprintf("staging-%d", time.Now().UnixNano()))
-	defer os.RemoveAll(stagingDir)
+	defer func() { _ = os.RemoveAll(stagingDir) }()
 
 	if err := git.Clone(resolvedURI, stagingDir); err != nil {
 		return fmt.Errorf("failed to fetch package repository: %w", err)

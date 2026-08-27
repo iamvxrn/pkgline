@@ -13,6 +13,7 @@ website/docs/.vitepress/cache/
 
 # Tool cache
 .pkgline/
+coverage.out
 
 # Agent / accidental dumps
 .backup_state/

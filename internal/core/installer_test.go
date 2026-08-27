@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"testing"
 
+	"pkgline/internal/db"
 	"pkgline/internal/path"
 )
 
@@ -243,5 +244,90 @@ mytool = "gh:foo/bar"
 	}
 	if got := installer.cfg.ResolveURI("sh:~already/repo"); got != "https://git.sr.ht/~already/repo.git" {
 		t.Errorf("sh:~ resolution failed: got %s", got)
+	}
+}
+
+func TestRollbackListSyncRemove(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("PKGLINE_ROOT", filepath.Join(tmpDir, ".pkgline"))
+	t.Setenv("PKGLINE_CONFIG_DIR", filepath.Join(tmpDir, ".config", "pkgline"))
+
+	installer, err := NewInstaller()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := installer.Sync(""); err != nil {
+		t.Fatalf("Sync empty inventory: %v", err)
+	}
+	if err := installer.Remove("nope"); err == nil {
+		t.Fatal("expected Remove of missing package to fail")
+	}
+	if err := installer.Rollback("nope"); err == nil {
+		t.Fatal("expected Rollback of missing package to fail")
+	}
+
+	exe := "rollback-tool"
+	if runtime.GOOS == "windows" {
+		exe += ".exe"
+	}
+	binPath := filepath.Join(path.BinDir(), exe)
+	if err := os.WriteFile(binPath, []byte("new"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binPath+".bak", []byte("old"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := installer.store.Set(db.PackageRecord{
+		Name:       "rollback-tool",
+		Version:    "1.0",
+		Executable: exe,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := installer.Rollback("rollback-tool"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(binPath)
+	if err != nil || string(got) != "old" {
+		t.Fatalf("rolled back content = %q err=%v", got, err)
+	}
+
+	if err := installer.List(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := installer.List(false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestShortenHashAndCopyHelpers(t *testing.T) {
+	if got := shortenHash("abcdefghij"); got != "abcdefg" {
+		t.Fatalf("shortenHash = %q", got)
+	}
+	if got := shortenHash("abc"); got != "abc" {
+		t.Fatalf("short hash = %q", got)
+	}
+
+	src := filepath.Join(t.TempDir(), "f")
+	dst := filepath.Join(t.TempDir(), "g")
+	if err := os.WriteFile(src, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyFile(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	from := t.TempDir()
+	to := filepath.Join(t.TempDir(), "copy")
+	if err := os.WriteFile(filepath.Join(from, "a.txt"), []byte("a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyDir(from, to); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(to, "a.txt")); err != nil {
+		t.Fatal(err)
 	}
 }

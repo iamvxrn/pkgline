@@ -31,7 +31,7 @@ type ScriptConfig struct {
 // Manifest represents the structure of pkgline.toml
 type Manifest struct {
 	Package PackageConfig `toml:"package"`
-	Scripts ScriptConfig `toml:"scripts"`
+	Scripts ScriptConfig  `toml:"scripts"`
 }
 
 // GetExecutable returns the configured executable name (with .exe on Windows) or defaults to package name.

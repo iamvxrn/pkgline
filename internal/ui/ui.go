@@ -94,7 +94,7 @@ func PrintTable(headers []string, rows [][]string) {
 		}
 		headerLine += colorize(colorBold, strings.ToUpper(h))
 	}
-	fmt.Fprintln(w, headerLine)
+	_, _ = fmt.Fprintln(w, headerLine)
 
 	// Rows
 	for _, r := range rows {
@@ -105,8 +105,8 @@ func PrintTable(headers []string, rows [][]string) {
 			}
 			rowLine += cell
 		}
-		fmt.Fprintln(w, rowLine)
+		_, _ = fmt.Fprintln(w, rowLine)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 }
