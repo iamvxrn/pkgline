@@ -22,6 +22,7 @@ export default defineConfig({
           { text: 'Install', link: '/install' },
           { text: 'Quickstart', link: '/quickstart' },
           { text: 'CLI Reference', link: '/cli' },
+          { text: 'Changelog', link: '/changelog' },
         ]
       },
       {
