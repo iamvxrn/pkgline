@@ -39,6 +39,15 @@ Global flags:
 	fmt.Print(banner)
 }
 
+func isHelpArg(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "-h", "--help", "help":
+		return true
+	default:
+		return false
+	}
+}
+
 func stripJSONFlag(args []string) (bool, []string) {
 	jsonOut := false
 	out := make([]string, 0, len(args))
@@ -65,6 +74,10 @@ func main() {
 
 	switch subcommand {
 	case "install", "i":
+		if len(os.Args) >= 3 && isHelpArg(os.Args[2]) {
+			printUsage()
+			return
+		}
 		if len(os.Args) < 3 {
 			ui.LogError("Missing URI or package specification.")
 			fmt.Println("Usage: pkgline install <uri>")
@@ -82,6 +95,10 @@ func main() {
 		}
 
 	case "remove", "rm", "uninstall":
+		if len(os.Args) >= 3 && isHelpArg(os.Args[2]) {
+			printUsage()
+			return
+		}
 		if len(os.Args) < 3 {
 			ui.LogError("Missing package name.")
 			fmt.Println("Usage: pkgline remove <package-name>")
@@ -99,6 +116,10 @@ func main() {
 		}
 
 	case "rollback":
+		if len(os.Args) >= 3 && isHelpArg(os.Args[2]) {
+			printUsage()
+			return
+		}
 		if len(os.Args) < 3 {
 			ui.LogError("Missing package name.")
 			fmt.Println("Usage: pkgline rollback <package-name>")

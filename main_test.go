@@ -10,6 +10,17 @@ import (
 	"testing"
 )
 
+func TestIsHelpArg(t *testing.T) {
+	for _, a := range []string{"--help", "-h", "help", "HELP"} {
+		if !isHelpArg(a) {
+			t.Fatalf("expected help: %q", a)
+		}
+	}
+	if isHelpArg("gh:user/repo") || isHelpArg("") {
+		t.Fatal("uri must not look like help")
+	}
+}
+
 func TestStripJSONFlag(t *testing.T) {
 	on, rest := stripJSONFlag([]string{"pkgline", "--json", "list", "extra"})
 	if !on || len(rest) != 3 || rest[1] != "list" {
