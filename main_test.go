@@ -21,6 +21,29 @@ func TestIsHelpArg(t *testing.T) {
 	}
 }
 
+func TestParseInstallArgs(t *testing.T) {
+	uri, lang, execName, err := parseInstallArgs([]string{"--lang", "go", "--exec=mybin", "gh:user/repo"})
+	if err != nil || uri != "gh:user/repo" || lang != "go" || execName != "mybin" {
+		t.Fatalf("got uri=%q lang=%q exec=%q err=%v", uri, lang, execName, err)
+	}
+	uri, lang, execName, err = parseInstallArgs([]string{"gh:user/repo", "--language=rust"})
+	if err != nil || uri != "gh:user/repo" || lang != "rust" || execName != "" {
+		t.Fatalf("trailing flag: uri=%q lang=%q exec=%q err=%v", uri, lang, execName, err)
+	}
+	if _, _, _, err := parseInstallArgs([]string{"--lang"}); err == nil {
+		t.Fatal("expected missing value")
+	}
+	if _, _, _, err := parseInstallArgs([]string{"--bogus", "gh:x/y"}); err == nil {
+		t.Fatal("expected unknown flag")
+	}
+	if _, _, _, err := parseInstallArgs([]string{"a", "b"}); err == nil {
+		t.Fatal("expected extra argument")
+	}
+	if _, _, _, err := parseInstallArgs(nil); err == nil {
+		t.Fatal("expected missing uri")
+	}
+}
+
 func TestStripJSONFlag(t *testing.T) {
 	on, rest := stripJSONFlag([]string{"pkgline", "--json", "list", "extra"})
 	if !on || len(rest) != 3 || rest[1] != "list" {
@@ -34,7 +57,7 @@ func TestStripJSONFlag(t *testing.T) {
 
 func TestPrintUsage(t *testing.T) {
 	out := captureStdout(t, printUsage)
-	for _, want := range []string{"install", "doctor", "--json"} {
+	for _, want := range []string{"install", "doctor", "--json", "--lang", "--exec"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("usage missing %q:\n%s", want, out)
 		}

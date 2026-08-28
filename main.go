@@ -23,6 +23,7 @@ Usage:
 
 Commands:
   install, i <uri>    Install package from Git URL, gh:/gl:/cb:/sh: shorthand, alias, or local path
+                      Flags: --lang <language>  --exec <name>
   remove, rm <name>   Remove an installed package and its linked binary
   rollback <name>     Restore previous backup executable (.bak) for package
   sync, update [name] Pull latest changes and rebuild package(s) if updated
@@ -61,6 +62,54 @@ func stripJSONFlag(args []string) (bool, []string) {
 	return jsonOut, out
 }
 
+func parseInstallArgs(args []string) (uri, lang, execName string, err error) {
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		take := func(flag string) (string, error) {
+			if i+1 >= len(args) {
+				return "", fmt.Errorf("missing value for %s", flag)
+			}
+			i++
+			return args[i], nil
+		}
+		switch {
+		case a == "--lang" || a == "--language":
+			lang, err = take(a)
+			if err != nil {
+				return "", "", "", err
+			}
+		case strings.HasPrefix(a, "--lang="):
+			lang = strings.TrimPrefix(a, "--lang=")
+		case strings.HasPrefix(a, "--language="):
+			lang = strings.TrimPrefix(a, "--language=")
+		case a == "--exec" || a == "--executable":
+			execName, err = take(a)
+			if err != nil {
+				return "", "", "", err
+			}
+		case strings.HasPrefix(a, "--exec="):
+			execName = strings.TrimPrefix(a, "--exec=")
+		case strings.HasPrefix(a, "--executable="):
+			execName = strings.TrimPrefix(a, "--executable=")
+		case a == "--":
+			positional = append(positional, args[i+1:]...)
+			i = len(args)
+		case strings.HasPrefix(a, "-") && a != "-":
+			return "", "", "", fmt.Errorf("unknown flag %s", a)
+		default:
+			positional = append(positional, a)
+		}
+	}
+	if len(positional) == 0 {
+		return "", "", "", fmt.Errorf("missing URI or package specification")
+	}
+	if len(positional) > 1 {
+		return "", "", "", fmt.Errorf("unexpected extra argument %q", positional[1])
+	}
+	return positional[0], lang, execName, nil
+}
+
 func main() {
 	jsonOut, args := stripJSONFlag(os.Args)
 	os.Args = args
@@ -80,16 +129,21 @@ func main() {
 		}
 		if len(os.Args) < 3 {
 			ui.LogError("Missing URI or package specification.")
-			fmt.Println("Usage: pkgline install <uri>")
+			fmt.Println("Usage: pkgline install [--lang <language>] [--exec <name>] <uri>")
 			os.Exit(1)
 		}
-		rawURI := os.Args[2]
+		uri, lang, execName, err := parseInstallArgs(os.Args[2:])
+		if err != nil {
+			ui.LogError("%v", err)
+			fmt.Println("Usage: pkgline install [--lang <language>] [--exec <name>] <uri>")
+			os.Exit(1)
+		}
 		installer, err := core.NewInstaller()
 		if err != nil {
 			ui.LogError("%v", err)
 			os.Exit(1)
 		}
-		if err := installer.Install(rawURI); err != nil {
+		if err := installer.InstallWith(uri, core.InstallOpts{Language: lang, Executable: execName}); err != nil {
 			ui.LogError("%v", err)
 			os.Exit(1)
 		}
@@ -255,6 +309,7 @@ _pkgline() {
     local -a commands
     commands=(
         'install:Install package from Git URL or spec'
+
         'remove:Remove installed package'
         'rollback:Restore previous backup executable'
         'sync:Pull latest changes and rebuild package'
