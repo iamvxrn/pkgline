@@ -465,3 +465,69 @@ language = "go"
 		t.Fatalf("expected .bak after sync rebuild: %v", err)
 	}
 }
+
+func TestNameFromURI(t *testing.T) {
+	cases := map[string]string{
+		"https://github.com/user/cooltool.git": "cooltool",
+		"gh:user/repo":                         "repo",
+		"/tmp/my-pkg":                          "my-pkg",
+		"my-pkg":                               "my-pkg",
+	}
+	for in, want := range cases {
+		if got := nameFromURI(in); got != want {
+			t.Errorf("nameFromURI(%q) = %q want %q", in, got, want)
+		}
+	}
+}
+
+func TestInstallWithOverridesLanguageAndExec(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("PKGLINE_ROOT", filepath.Join(tmpDir, ".pkgline"))
+	t.Setenv("PKGLINE_CONFIG_DIR", filepath.Join(tmpDir, ".config", "pkgline"))
+
+	installer, err := NewInstaller()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgDir := filepath.Join(tmpDir, "wrong-lang")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "pkgline.toml"), []byte(`
+[package]
+name = "wrong-lang"
+version = "0.1.0"
+language = "rust"
+executable = "wrong-lang"
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "go.mod"), []byte("module wrong-lang\n\ngo 1.20\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	wantExe := "overridden"
+	if runtime.GOOS == "windows" {
+		wantExe += ".exe"
+	}
+	if err := installer.InstallWith(pkgDir, InstallOpts{Language: "go", Executable: "overridden"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(installer.cfg.BinDir, wantExe)); err != nil {
+		t.Fatalf("binary: %v", err)
+	}
+	rec, ok, err := installer.store.Get("wrong-lang")
+	if err != nil || !ok {
+		t.Fatalf("record: ok=%v err=%v", ok, err)
+	}
+	if rec.Language != "go" {
+		t.Fatalf("language = %q", rec.Language)
+	}
+	if rec.Executable != wantExe {
+		t.Fatalf("executable = %q", rec.Executable)
+	}
+}

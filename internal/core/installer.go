@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -41,6 +42,12 @@ func NewInstaller() (*Installer, error) {
 	}, nil
 }
 
+// InstallOpts overrides inferred or manifest language and binary name.
+type InstallOpts struct {
+	Language   string
+	Executable string
+}
+
 func (ins *Installer) appPath(name string) string {
 	return filepath.Join(ins.cfg.AppsDir, name)
 }
@@ -51,6 +58,11 @@ func (ins *Installer) binFile(name string) string {
 
 // Install fetches, compiles/executes, and records a new package.
 func (ins *Installer) Install(rawURI string) error {
+	return ins.InstallWith(rawURI, InstallOpts{})
+}
+
+// InstallWith is Install plus CLI --lang / --exec overrides.
+func (ins *Installer) InstallWith(rawURI string, opts InstallOpts) error {
 	spec, ref := config.SplitRef(rawURI)
 	resolvedURI := ins.cfg.ResolveURI(spec)
 	ui.LogInfo("Installing from %s...", resolvedURI)
@@ -77,7 +89,18 @@ func (ins *Installer) Install(rawURI string) error {
 	// Parse manifest
 	m, err := manifest.LoadFromDir(stagingDir)
 	if err != nil {
-		return fmt.Errorf("failed to read package manifest: %w", err)
+		if strings.TrimSpace(opts.Language) == "" && strings.TrimSpace(opts.Executable) == "" {
+			return fmt.Errorf("failed to read package manifest: %w", err)
+		}
+		m = &manifest.Manifest{
+			Package: manifest.PackageConfig{
+				Name:    nameFromURI(resolvedURI),
+				Version: "0.0.0",
+			},
+		}
+	}
+	if err := m.ApplyOverrides(opts.Language, opts.Executable); err != nil {
+		return fmt.Errorf("failed to apply install overrides: %w", err)
 	}
 
 	pkgName := m.Package.Name
@@ -370,6 +393,17 @@ func (ins *Installer) List(asJSON bool) error {
 	ui.CheckPathWarning()
 
 	return nil
+}
+
+func nameFromURI(uri string) string {
+	u := strings.TrimSuffix(strings.TrimRight(strings.ReplaceAll(uri, "\\", "/"), "/"), ".git")
+	if i := strings.LastIndex(u, "/"); i >= 0 {
+		u = u[i+1:]
+	}
+	if u == "" || u == "." {
+		return "package"
+	}
+	return u
 }
 
 func writeRollbackMeta(binPath string, rec db.PackageRecord) error {
