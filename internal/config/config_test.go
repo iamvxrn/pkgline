@@ -87,6 +87,26 @@ func TestLoadConfigMergesFileOverDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadConfigEnvWinsOverFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PKGLINE_CONFIG_DIR", dir)
+	envBin := filepath.Join(dir, "env-bin")
+	fileBin := filepath.Join(dir, "file-bin")
+	t.Setenv("PKGLINE_BIN", envBin)
+	t.Setenv("PKGLINE_APPS", "")
+	toml := fmt.Sprintf("bin_dir = %q\n", fileBin)
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BinDir != envBin {
+		t.Fatalf("BinDir = %q, want env %q", cfg.BinDir, envBin)
+	}
+}
+
 func TestLoadConfigRejectsInvalidTOML(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PKGLINE_CONFIG_DIR", dir)

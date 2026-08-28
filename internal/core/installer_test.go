@@ -331,3 +331,126 @@ func TestShortenHashAndCopyHelpers(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestInstallHonorsConfigBinDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgDir := filepath.Join(tmpDir, "cfg")
+	customBin := filepath.Join(tmpDir, "mybin")
+	customApps := filepath.Join(tmpDir, "myapps")
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PKGLINE_ROOT", filepath.Join(tmpDir, ".pkgline"))
+	t.Setenv("PKGLINE_CONFIG_DIR", cfgDir)
+	t.Setenv("PKGLINE_BIN", "")
+	t.Setenv("PKGLINE_APPS", "")
+	toml := "bin_dir = \"" + filepath.ToSlash(customBin) + "\"\napps_dir = \"" + filepath.ToSlash(customApps) + "\"\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	installer, err := NewInstaller()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if installer.cfg.BinDir != customBin && installer.cfg.BinDir != filepath.Clean(customBin) {
+		// TOML may keep slash form; compare cleaned
+		if filepath.Clean(installer.cfg.BinDir) != filepath.Clean(customBin) {
+			t.Fatalf("cfg.BinDir = %q want %q", installer.cfg.BinDir, customBin)
+		}
+	}
+
+	pkgDir := filepath.Join(tmpDir, "pkg")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "pkgline.toml"), []byte(`
+[package]
+name = "cfgbin"
+version = "0.1.0"
+language = "go"
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "go.mod"), []byte("module cfgbin\n\ngo 1.20\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := installer.Install(pkgDir); err != nil {
+		t.Fatal(err)
+	}
+	exe := "cfgbin"
+	if runtime.GOOS == "windows" {
+		exe += ".exe"
+	}
+	if _, err := os.Stat(filepath.Join(installer.cfg.BinDir, exe)); err != nil {
+		t.Fatalf("binary not in config bin_dir: %v", err)
+	}
+}
+
+func TestSyncLocalInstallRebuildsOnVersionBump(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("PKGLINE_ROOT", filepath.Join(tmpDir, ".pkgline"))
+	t.Setenv("PKGLINE_CONFIG_DIR", filepath.Join(tmpDir, ".config", "pkgline"))
+	t.Setenv("PKGLINE_BIN", "")
+	t.Setenv("PKGLINE_APPS", "")
+
+	installer, err := NewInstaller()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pkgDir := filepath.Join(tmpDir, "pkg")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeGoPkg := func(ver string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(pkgDir, "pkgline.toml"), []byte(`
+[package]
+name = "sync-local"
+version = "`+ver+`"
+language = "go"
+`), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(pkgDir, "go.mod"), []byte("module synclocal\n\ngo 1.20\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(pkgDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeGoPkg("0.1.0")
+	if err := installer.Install(pkgDir); err != nil {
+		t.Fatal(err)
+	}
+
+	appToml := filepath.Join(installer.appPath("sync-local"), "pkgline.toml")
+	if err := os.WriteFile(appToml, []byte(`
+[package]
+name = "sync-local"
+version = "0.2.0"
+language = "go"
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := installer.Sync("sync-local"); err != nil {
+		t.Fatal(err)
+	}
+	rec, ok, err := installer.store.Get("sync-local")
+	if err != nil || !ok {
+		t.Fatalf("record: ok=%v err=%v", ok, err)
+	}
+	if rec.Version != "0.2.0" {
+		t.Fatalf("version after sync = %q", rec.Version)
+	}
+	exe := rec.Executable
+	bak := installer.binFile(exe) + ".bak"
+	if _, err := os.Stat(bak); err != nil {
+		t.Fatalf("expected .bak after sync rebuild: %v", err)
+	}
+}

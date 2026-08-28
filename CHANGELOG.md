@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+Honor `bin_dir` / `apps_dir` from config.toml. `sync` backs up the binary, skips git pull for local installs, and does not rebuild when `rev-parse` fails.
+
 CI, lint, and tests: gofmt, golangci-lint, govulncheck, and unit coverage for config, db, git, path, ui, and the CLI helpers.
 
 ## [0.3.0] - 2026-08-26

@@ -48,11 +48,12 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	if fileCfg.BinDir != "" {
-		cfg.BinDir = fileCfg.BinDir
+	// Env (PKGLINE_BIN / PKGLINE_APPS) wins over config.toml; file wins over defaults.
+	if fileCfg.BinDir != "" && os.Getenv("PKGLINE_BIN") == "" {
+		cfg.BinDir = path.ExpandPath(fileCfg.BinDir)
 	}
-	if fileCfg.AppsDir != "" {
-		cfg.AppsDir = fileCfg.AppsDir
+	if fileCfg.AppsDir != "" && os.Getenv("PKGLINE_APPS") == "" {
+		cfg.AppsDir = path.ExpandPath(fileCfg.AppsDir)
 	}
 
 	for alias, uri := range fileCfg.Aliases {

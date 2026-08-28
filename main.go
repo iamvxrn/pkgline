@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"pkgline/internal/config"
 	"pkgline/internal/core"
 	"pkgline/internal/path"
 	"pkgline/internal/ui"
@@ -169,6 +170,11 @@ func main() {
 
 func runDoctor(jsonOut bool) {
 	binDir := path.BinDir()
+	appsDir := path.AppsDir()
+	if cfg, err := config.LoadConfig(); err == nil {
+		binDir = cfg.BinDir
+		appsDir = cfg.AppsDir
+	}
 	pathEnv := os.Getenv("PATH")
 	inPath := false
 	for _, p := range filepath.SplitList(pathEnv) {
@@ -183,7 +189,7 @@ func runDoctor(jsonOut bool) {
 			"version":     version,
 			"root":        path.PkglineRoot(),
 			"bin_dir":     binDir,
-			"apps_dir":    path.AppsDir(),
+			"apps_dir":    appsDir,
 			"config":      path.ConfigPath(),
 			"bin_in_path": inPath,
 		}
@@ -197,7 +203,7 @@ func runDoctor(jsonOut bool) {
 	fmt.Printf("  • Pkgline Version: v%s\n", version)
 	fmt.Printf("  • Pkgline Root:    %s\n", path.PkglineRoot())
 	fmt.Printf("  • Bin Dir:      %s\n", binDir)
-	fmt.Printf("  • Apps Dir:     %s\n", path.AppsDir())
+	fmt.Printf("  • Apps Dir:     %s\n", appsDir)
 	fmt.Printf("  • Config File:  %s\n", path.ConfigPath())
 
 	if inPath {

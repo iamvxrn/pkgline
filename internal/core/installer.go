@@ -23,19 +23,28 @@ type Installer struct {
 
 // NewInstaller creates a new Installer instance.
 func NewInstaller() (*Installer, error) {
-	if err := path.EnsureDirs(); err != nil {
-		return nil, err
-	}
-
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return nil, err
+	}
+	for _, dir := range []string{cfg.BinDir, cfg.AppsDir, path.CacheDir(), path.ConfigDir()} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
 	}
 
 	return &Installer{
 		cfg:   cfg,
 		store: db.NewStore(),
 	}, nil
+}
+
+func (ins *Installer) appPath(name string) string {
+	return filepath.Join(ins.cfg.AppsDir, name)
+}
+
+func (ins *Installer) binFile(name string) string {
+	return filepath.Join(ins.cfg.BinDir, name)
 }
 
 // Install fetches, compiles/executes, and records a new package.
@@ -58,11 +67,11 @@ func (ins *Installer) Install(rawURI string) error {
 	}
 
 	pkgName := m.Package.Name
-	appDir := path.AppPath(pkgName)
+	appDir := ins.appPath(pkgName)
 
 	// Create binary backup before overwriting
 	binName := m.GetExecutable()
-	binPath := filepath.Join(path.BinDir(), binName)
+	binPath := ins.binFile(binName)
 	bakPath := binPath + ".bak"
 	if _, err := os.Stat(binPath); err == nil {
 		_ = copyFile(binPath, bakPath)
@@ -83,7 +92,7 @@ func (ins *Installer) Install(rawURI string) error {
 	}
 
 	// Perform smart installation build/script execution
-	buildRes, err := BuildAndInstall(appDir, m)
+	buildRes, err := BuildAndInstall(appDir, m, ins.cfg.BinDir)
 	if err != nil {
 		_ = os.RemoveAll(appDir) // Clean up target directory on build failure
 		// Restore binary backup if available
@@ -136,7 +145,7 @@ func (ins *Installer) Rollback(pkgName string) error {
 		binName = pkgName
 	}
 
-	binPath := filepath.Join(path.BinDir(), binName)
+	binPath := ins.binFile(binName)
 	bakPath := binPath + ".bak"
 
 	if _, err := os.Stat(bakPath); os.IsNotExist(err) {
@@ -154,7 +163,7 @@ func (ins *Installer) Rollback(pkgName string) error {
 // Remove uninstalls a package and cleans up its files.
 func (ins *Installer) Remove(pkgName string) error {
 	rec, exists, _ := ins.store.Get(pkgName)
-	appDir := path.AppPath(pkgName)
+	appDir := ins.appPath(pkgName)
 
 	if !exists {
 		// Check if folder exists anyway
@@ -183,7 +192,7 @@ func (ins *Installer) Remove(pkgName string) error {
 		binName = pkgName
 	}
 
-	binPath := filepath.Join(path.BinDir(), binName)
+	binPath := ins.binFile(binName)
 	_ = os.Remove(binPath)
 	_ = os.Remove(binPath + ".bak")
 
@@ -230,17 +239,21 @@ func (ins *Installer) Sync(targetPkg string) error {
 	ui.LogInfo("Syncing %d package(s)...", len(packages))
 
 	for _, rec := range packages {
-		appDir := path.AppPath(rec.Name)
+		appDir := ins.appPath(rec.Name)
 		if _, err := os.Stat(appDir); os.IsNotExist(err) {
 			ui.LogWarning("App directory for '%s' not found (%s). Skipping sync.", rec.Name, appDir)
 			continue
 		}
 
 		ui.LogInfo("Syncing package '%s'...", rec.Name)
-		pulled, err := git.Pull(appDir)
-		if err != nil {
-			ui.LogWarning("Failed to pull updates for '%s': %v. Continuing sync...", rec.Name, err)
-			continue
+		pulled := false
+		if git.IsGitRepo(appDir) {
+			var err error
+			pulled, err = git.Pull(appDir)
+			if err != nil {
+				ui.LogWarning("Failed to pull updates for '%s': %v. Continuing sync...", rec.Name, err)
+				continue
+			}
 		}
 
 		m, err := manifest.LoadFromDir(appDir)
@@ -249,7 +262,12 @@ func (ins *Installer) Sync(targetPkg string) error {
 			continue
 		}
 
-		newCommit, _ := git.GetHeadCommit(appDir)
+		newCommit := rec.GitCommit
+		if git.IsGitRepo(appDir) {
+			if c, err := git.GetHeadCommit(appDir); err == nil {
+				newCommit = c
+			}
+		}
 		versionChanged := m.Package.Version != rec.Version
 		commitChanged := newCommit != rec.GitCommit
 
@@ -257,7 +275,16 @@ func (ins *Installer) Sync(targetPkg string) error {
 			ui.LogInfo("Rebuilding '%s' (Version: %s -> %s, Commit: %s)...",
 				rec.Name, rec.Version, m.Package.Version, shortenHash(newCommit))
 
-			buildRes, err := BuildAndInstall(appDir, m)
+			binName := rec.Executable
+			if binName == "" {
+				binName = m.GetExecutable()
+			}
+			binPath := ins.binFile(binName)
+			if _, err := os.Stat(binPath); err == nil {
+				_ = copyFile(binPath, binPath+".bak")
+			}
+
+			buildRes, err := BuildAndInstall(appDir, m, ins.cfg.BinDir)
 			if err != nil {
 				ui.LogError("Rebuild failed for '%s': %v. Continuing sync...", rec.Name, err)
 				continue

@@ -21,13 +21,15 @@ type BuildResult struct {
 }
 
 // BuildAndInstall performs the smart installation logic based on the manifest.
-func BuildAndInstall(appRoot string, m *manifest.Manifest) (*BuildResult, error) {
+func BuildAndInstall(appRoot string, m *manifest.Manifest, binDir string) (*BuildResult, error) {
 	if err := m.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid package manifest: %w", err)
 	}
 
 	execName := m.GetExecutable()
-	binDir := path.BinDir()
+	if binDir == "" {
+		binDir = path.BinDir()
+	}
 	targetBinPath := filepath.Join(binDir, execName)
 	lang := m.GetLanguage()
 
@@ -95,7 +97,7 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest) (*BuildResult, error)
 		}
 
 		ui.LogInfo("Executing fallback install script '%s' for '%s'...", installScript, m.Package.Name)
-		if err := runInstallScript(appRoot, installScript, m); err != nil {
+		if err := runInstallScript(appRoot, installScript, m, binDir); err != nil {
 			return nil, fmt.Errorf("install script execution failed: %w", err)
 		}
 
@@ -256,7 +258,7 @@ func copyBuiltBinary(searchRoot, execName, targetBinPath string) error {
 }
 
 // runInstallScript executes script.install with environment variables
-func runInstallScript(appRoot, scriptName string, m *manifest.Manifest) error {
+func runInstallScript(appRoot, scriptName string, m *manifest.Manifest, binDir string) error {
 	scriptPath := filepath.Join(appRoot, scriptName)
 	fi, err := os.Stat(scriptPath)
 	if os.IsNotExist(err) {
@@ -271,7 +273,9 @@ func runInstallScript(appRoot, scriptName string, m *manifest.Manifest) error {
 		_ = os.Chmod(scriptPath, fi.Mode()|0111)
 	}
 
-	binDir := path.BinDir()
+	if binDir == "" {
+		binDir = path.BinDir()
+	}
 	cmd := exec.Command("sh", scriptPath)
 	cmd.Dir = appRoot
 

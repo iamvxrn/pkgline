@@ -62,7 +62,7 @@ func GetHeadCommit(repoDir string) (string, error) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return "unknown", fmt.Errorf("git rev-parse HEAD failed: %s (%w)", strings.TrimSpace(stderr.String()), err)
+		return "", fmt.Errorf("git rev-parse HEAD failed: %s (%w)", strings.TrimSpace(stderr.String()), err)
 	}
 
 	return strings.TrimSpace(stdout.String()), nil

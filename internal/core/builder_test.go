@@ -36,7 +36,7 @@ func TestCopyBuiltBinary(t *testing.T) {
 
 func TestBuildAndInstallRejectsInvalidManifest(t *testing.T) {
 	m := &manifest.Manifest{}
-	if _, err := BuildAndInstall(t.TempDir(), m); err == nil {
+	if _, err := BuildAndInstall(t.TempDir(), m, ""); err == nil {
 		t.Fatal("expected validation error")
 	}
 }
@@ -64,7 +64,7 @@ func TestBuildAndInstallGo(t *testing.T) {
 	m.Package.Name = "demo"
 	m.Package.Version = "0.1.0"
 	m.Package.Language = "go"
-	res, err := BuildAndInstall(pkg, m)
+	res, err := BuildAndInstall(pkg, m, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestBuildAndInstallUnsupportedLanguageWithoutScript(t *testing.T) {
 	m := &manifest.Manifest{}
 	m.Package.Name = "py"
 	m.Package.Language = "python"
-	if _, err := BuildAndInstall(t.TempDir(), m); err == nil {
+	if _, err := BuildAndInstall(t.TempDir(), m, ""); err == nil {
 		t.Fatal("expected unsupported language error")
 	}
 }

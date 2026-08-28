@@ -76,8 +76,8 @@ func TestGitRepoHead(t *testing.T) {
 	if _, err := Pull(t.TempDir()); err == nil {
 		t.Fatal("expected Pull on non-repo to fail")
 	}
-	if _, err := GetHeadCommit(t.TempDir()); err == nil {
-		t.Fatal("expected GetHeadCommit on non-repo to fail")
+	if sha, err := GetHeadCommit(t.TempDir()); err == nil || sha != "" {
+		t.Fatalf("failed rev-parse should return empty hash, got %q err %v", sha, err)
 	}
 }
 

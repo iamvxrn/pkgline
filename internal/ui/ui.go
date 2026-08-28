@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"pkgline/internal/config"
 	"pkgline/internal/path"
 )
 
@@ -64,6 +65,9 @@ func LogError(format string, a ...interface{}) {
 // CheckPathWarning checks if ~/.pkgline/bin is present in PATH environment variable.
 func CheckPathWarning() {
 	binDir := path.BinDir()
+	if cfg, err := config.LoadConfig(); err == nil && cfg.BinDir != "" {
+		binDir = cfg.BinDir
+	}
 	pathEnv := os.Getenv("PATH")
 	paths := filepath.SplitList(pathEnv)
 
