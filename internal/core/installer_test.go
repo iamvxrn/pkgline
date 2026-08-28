@@ -286,12 +286,23 @@ func TestRollbackListSyncRemove(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := writeRollbackMeta(binPath, db.PackageRecord{
+		Name:       "rollback-tool",
+		Version:    "0.9",
+		Executable: exe,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := installer.Rollback("rollback-tool"); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(binPath)
 	if err != nil || string(got) != "old" {
 		t.Fatalf("rolled back content = %q err=%v", got, err)
+	}
+	rec, ok, err := installer.store.Get("rollback-tool")
+	if err != nil || !ok || rec.Version != "0.9" {
+		t.Fatalf("inventory after rollback: %+v ok=%v err=%v", rec, ok, err)
 	}
 
 	if err := installer.List(true); err != nil {

@@ -96,6 +96,20 @@ func GetHeadCommit(repoDir string) (string, error) {
 	return strings.TrimSpace(stdout.String()), nil
 }
 
+func Checkout(repoDir, ref string) error {
+	if ref == "" {
+		return fmt.Errorf("empty git ref")
+	}
+	cmd := exec.Command("git", "checkout", "--detach", ref)
+	cmd.Dir = repoDir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git checkout %s failed in %s: %s (%w)", ref, repoDir, strings.TrimSpace(stderr.String()), err)
+	}
+	return nil
+}
+
 // IsGitRepo checks whether dir is inside a git repository.
 func IsGitRepo(dir string) bool {
 	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")

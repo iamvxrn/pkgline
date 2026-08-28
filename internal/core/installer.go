@@ -79,6 +79,9 @@ func (ins *Installer) Install(rawURI string) error {
 	bakPath := binPath + ".bak"
 	if _, err := os.Stat(binPath); err == nil {
 		_ = copyFile(binPath, bakPath)
+		if old, ok, _ := ins.store.Get(pkgName); ok {
+			_ = writeRollbackMeta(binPath, old)
+		}
 	}
 
 	// If app already exists, remove existing directory for clean install
@@ -159,8 +162,11 @@ func (ins *Installer) Rollback(pkgName string) error {
 	if err := copyFile(bakPath, binPath); err != nil {
 		return fmt.Errorf("failed to restore backup binary: %w", err)
 	}
+	if err := ins.restoreRollbackMeta(binPath, pkgName); err != nil {
+		ui.LogWarning("Restored binary but not inventory metadata: %v", err)
+	}
 
-	ui.LogSuccess("Rolled back binary for package '%s' from %s!", pkgName, bakPath)
+	ui.LogSuccess("Rolled back package '%s' from %s!", pkgName, bakPath)
 	return nil
 }
 
@@ -199,6 +205,7 @@ func (ins *Installer) Remove(pkgName string) error {
 	binPath := ins.binFile(binName)
 	_ = os.Remove(binPath)
 	_ = os.Remove(binPath + ".bak")
+	_ = os.Remove(binPath + ".bak.json")
 
 	// Remove app directory
 	if err := os.RemoveAll(appDir); err != nil {
@@ -286,6 +293,7 @@ func (ins *Installer) Sync(targetPkg string) error {
 			binPath := ins.binFile(binName)
 			if _, err := os.Stat(binPath); err == nil {
 				_ = copyFile(binPath, binPath+".bak")
+				_ = writeRollbackMeta(binPath, rec)
 			}
 
 			buildRes, err := BuildAndInstall(appDir, m, ins.cfg.BinDir)
@@ -352,6 +360,37 @@ func (ins *Installer) List(asJSON bool) error {
 	ui.CheckPathWarning()
 
 	return nil
+}
+
+func writeRollbackMeta(binPath string, rec db.PackageRecord) error {
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(binPath+".bak.json", data, 0644)
+}
+
+func (ins *Installer) restoreRollbackMeta(binPath, pkgName string) error {
+	data, err := os.ReadFile(binPath + ".bak.json")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var rec db.PackageRecord
+	if err := json.Unmarshal(data, &rec); err != nil {
+		return err
+	}
+	if rec.Name == "" {
+		rec.Name = pkgName
+	}
+	if rec.AppDir != "" && rec.GitCommit != "" && git.IsGitRepo(rec.AppDir) {
+		if err := git.Checkout(rec.AppDir, rec.GitCommit); err != nil {
+			ui.LogWarning("Could not check out previous commit: %v", err)
+		}
+	}
+	return ins.store.Set(rec)
 }
 
 func shortenHash(hash string) string {
