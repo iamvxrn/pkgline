@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"time"
 
 	"pkgline/internal/path"
 )
@@ -50,6 +51,26 @@ func NewStore() *Store {
 func NewStoreWithPath(p string) *Store {
 	return &Store{
 		filePath: p,
+	}
+}
+
+func (s *Store) lockDir() string {
+	return s.filePath + ".lock"
+}
+
+func (s *Store) withFileLock(fn func() error) error {
+	lockDir := s.lockDir()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := os.Mkdir(lockDir, 0700)
+		if err == nil {
+			defer func() { _ = os.Remove(lockDir) }()
+			return fn()
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for inventory lock %s: %w", lockDir, err)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
@@ -129,22 +150,26 @@ func (s *Store) Get(name string) (PackageRecord, bool, error) {
 
 // Set adds or updates a package in inventory.
 func (s *Store) Set(rec PackageRecord) error {
-	inv, err := s.Load()
-	if err != nil {
-		return err
-	}
-	inv.Packages[rec.Name] = rec
-	return s.Save(inv)
+	return s.withFileLock(func() error {
+		inv, err := s.Load()
+		if err != nil {
+			return err
+		}
+		inv.Packages[rec.Name] = rec
+		return s.Save(inv)
+	})
 }
 
 // Remove deletes a package record from inventory.
 func (s *Store) Remove(name string) error {
-	inv, err := s.Load()
-	if err != nil {
-		return err
-	}
-	delete(inv.Packages, name)
-	return s.Save(inv)
+	return s.withFileLock(func() error {
+		inv, err := s.Load()
+		if err != nil {
+			return err
+		}
+		delete(inv.Packages, name)
+		return s.Save(inv)
+	})
 }
 
 // List returns all package records sorted alphabetically by name.
