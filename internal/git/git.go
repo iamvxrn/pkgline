@@ -26,7 +26,7 @@ func Clone(uri string, targetDir string) error {
 	}
 
 	// Normal Git remote URL clone
-	cmd := exec.Command("git", "clone", "--depth", "1", uri, targetDir)
+	cmd := exec.Command("git", "clone", "--depth", "1", "--recurse-submodules", "--shallow-submodules", uri, targetDir)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
