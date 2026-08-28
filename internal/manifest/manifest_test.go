@@ -233,3 +233,28 @@ executable = "inferred-make"
 		t.Errorf("expected make, got %q", m.GetLanguage())
 	}
 }
+
+func TestApplyOverrides(t *testing.T) {
+	m := &Manifest{Package: PackageConfig{Name: "tool", Version: "0.1.0", Language: "make"}}
+	if err := m.ApplyOverrides("go", "custom"); err != nil {
+		t.Fatal(err)
+	}
+	if m.GetLanguage() != "go" {
+		t.Fatalf("language = %q", m.GetLanguage())
+	}
+	want := "custom"
+	if runtime.GOOS == "windows" {
+		want += ".exe"
+	}
+	if m.GetExecutable() != want {
+		t.Fatalf("executable = %q want %q", m.GetExecutable(), want)
+	}
+	if err := m.ApplyOverrides("python", ""); err == nil {
+		t.Fatal("expected unsupported language")
+	}
+
+	ok := &Manifest{Package: PackageConfig{Name: "tool", Version: "0.1.0", Language: "go"}}
+	if err := ok.ApplyOverrides("", ""); err != nil {
+		t.Fatalf("empty overrides should keep valid manifest: %v", err)
+	}
+}

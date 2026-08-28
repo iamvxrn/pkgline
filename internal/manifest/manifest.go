@@ -88,6 +88,18 @@ func (m *Manifest) Validate() error {
 	return nil
 }
 
+// ApplyOverrides sets CLI --lang / --exec on top of a loaded (or inferred)
+// manifest, then re-validates. Empty strings leave the existing values.
+func (m *Manifest) ApplyOverrides(language, executable string) error {
+	if language = strings.TrimSpace(language); language != "" {
+		m.Package.Language = language
+	}
+	if executable = strings.TrimSpace(executable); executable != "" {
+		m.Package.Executable = executable
+	}
+	return m.Validate()
+}
+
 // LoadFromFile parses a pkgline.toml file at the given path.
 func LoadFromFile(filePath string) (*Manifest, error) {
 	m, err := parseFile(filePath)
