@@ -4,9 +4,12 @@
 
 ```bash
 pkgline install <uri>
+pkgline install --lang go --exec mytool <uri>
 ```
 
 URI formats: `gh:user/repo`, `gl:group/repo`, `cb:user/repo`, `sh:user/repo`, `user/repo` (GitHub), full `https://` or `git@` URLs, or a local path.
+
+`--lang` / `--language` overrides inferred or manifest language (`go`, `rust`, `cbld`, `c`, `cpp`, `make`, `cmake`). `--exec` / `--executable` overrides the binary name. Both accept `--lang=go` form. Flags may appear before or after the URI.
 
 ## `remove`
 

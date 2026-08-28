@@ -34,6 +34,7 @@ Invoke-Expression (Invoke-WebRequest -Uri "https://pkgline.pages.dev/install.ps1
 
 ```bash
 pkgline install gh:user/repository
+pkgline install --lang go --exec mytool gh:user/repository
 pkgline list
 pkgline remove package_name
 pkgline sync

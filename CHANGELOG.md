@@ -4,7 +4,7 @@
 
 Honor `bin_dir` / `apps_dir` from config.toml. `sync` backs up the binary, skips git pull for local installs, and does not rebuild when `rev-parse` fails.
 
-`install`/`remove`/`rollback --help` is help, not a URI. Infer language from `go.mod` / `Cargo.toml` / `cbld.toml` / CMake / Make / `install.sh`. Clone with submodules. Pin `@tag`/`@branch`/`@sha`. Go `./cmd/<name>` or `package.main_path`. Windows `install.ps1` and script runner. Cross-process inventory lock. Rollback restores inventory metadata. SIGINT removes the staging dir.
+`install`/`remove`/`rollback --help` is help, not a URI. Infer language from `go.mod` / `Cargo.toml` / `cbld.toml` / CMake / Make / `install.sh`. `install --lang` / `--exec` override that. Clone with submodules. Pin `@tag`/`@branch`/`@sha`. Go `./cmd/<name>` or `package.main_path`. Windows `install.ps1` and script runner. Cross-process inventory lock. Rollback restores inventory metadata. SIGINT removes the staging dir.
 
 CI, lint, and tests: gofmt, golangci-lint, govulncheck, and unit coverage for config, db, git, path, ui, and the CLI helpers.
 
