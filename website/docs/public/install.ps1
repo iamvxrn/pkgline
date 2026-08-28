@@ -11,7 +11,7 @@ if ([string]::IsNullOrWhiteSpace($Tag)) {
 }
 
 $Url = "https://github.com/$Repo/releases/download/$Tag/${Binary}_${Target}.${Ext}"
-$InstallDir = "$env:USERPROFILE\.local\bin"
+$InstallDir = "$env:USERPROFILE\.pkgline\bin"
 
 Write-Host "Downloading $Binary $Tag for $Target..."
 $TmpDir = Join-Path $env:TEMP ([guid]::NewGuid().ToString())
