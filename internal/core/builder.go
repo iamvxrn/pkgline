@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"pkgline/internal/manifest"
@@ -287,7 +288,7 @@ func runInstallScript(appRoot, scriptName string, m *manifest.Manifest, binDir s
 	if binDir == "" {
 		binDir = path.BinDir()
 	}
-	cmd := exec.Command("sh", scriptPath)
+	cmd := scriptCommand(scriptPath)
 	cmd.Dir = appRoot
 
 	// Prepare Environment
@@ -324,7 +325,7 @@ func RunUninstallScript(appRoot, scriptName string, m *manifest.Manifest) error 
 		return nil
 	}
 
-	cmd := exec.Command("sh", scriptPath)
+	cmd := scriptCommand(scriptPath)
 	cmd.Dir = appRoot
 
 	env := os.Environ()
@@ -345,9 +346,21 @@ func RunUninstallScript(appRoot, scriptName string, m *manifest.Manifest) error 
 		return fmt.Errorf("uninstall script failed: %s (%w)", strings.TrimSpace(stderr.String()), err)
 	}
 
-	if stdout.Len() > 0 {
-		ui.LogInfo("Uninstall script output:\n%s", strings.TrimSpace(stdout.String()))
-	}
-
 	return nil
+}
+
+func scriptCommand(scriptPath string) *exec.Cmd {
+	ext := strings.ToLower(filepath.Ext(scriptPath))
+	if runtime.GOOS == "windows" {
+		switch ext {
+		case ".ps1":
+			return exec.Command("powershell", "-NoProfile", "-File", scriptPath)
+		case ".bat", ".cmd":
+			return exec.Command("cmd", "/C", scriptPath)
+		}
+		if _, err := exec.LookPath("bash"); err == nil {
+			return exec.Command("bash", scriptPath)
+		}
+	}
+	return exec.Command("sh", scriptPath)
 }

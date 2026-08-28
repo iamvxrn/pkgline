@@ -106,6 +106,16 @@ func TestBuildAndInstallGoCmdLayout(t *testing.T) {
 	}
 }
 
+func TestScriptCommandUnix(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip()
+	}
+	cmd := scriptCommand("/tmp/install.sh")
+	if filepath.Base(cmd.Path) != "sh" && cmd.Args[0] != "sh" {
+		t.Fatalf("unix script driver = %q %v", cmd.Path, cmd.Args)
+	}
+}
+
 func TestBuildAndInstallUnsupportedLanguageWithoutScript(t *testing.T) {
 	m := &manifest.Manifest{}
 	m.Package.Name = "py"
