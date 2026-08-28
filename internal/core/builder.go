@@ -36,7 +36,7 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest, binDir string) (*Buil
 	switch lang {
 	case "go":
 		ui.LogInfo("Building Go native package '%s'...", m.Package.Name)
-		if err := buildGoPackage(appRoot, targetBinPath); err != nil {
+		if err := buildGoPackage(appRoot, targetBinPath, m); err != nil {
 			return nil, fmt.Errorf("go build failed: %w", err)
 		}
 		return &BuildResult{
@@ -109,9 +109,20 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest, binDir string) (*Buil
 	}
 }
 
-// buildGoPackage runs `go build -o <targetBinPath>` in appRoot
-func buildGoPackage(appRoot, targetBinPath string) error {
-	cmd := exec.Command("go", "build", "-o", targetBinPath, ".")
+// buildGoPackage runs `go build -o <targetBinPath>` in appRoot.
+// Package.MainPath selects the package (default ".", then ./cmd/<name> if present).
+func buildGoPackage(appRoot, targetBinPath string, m *manifest.Manifest) error {
+	pkg := strings.TrimSpace(m.Package.MainPath)
+	if pkg == "" {
+		pkg = "."
+		cmdDir := filepath.Join(appRoot, "cmd", m.Package.Name)
+		if st, err := os.Stat(cmdDir); err == nil && st.IsDir() {
+			if _, err := os.Stat(filepath.Join(appRoot, "main.go")); err != nil {
+				pkg = "./cmd/" + m.Package.Name
+			}
+		}
+	}
+	cmd := exec.Command("go", "build", "-o", targetBinPath, pkg)
 	cmd.Dir = appRoot
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

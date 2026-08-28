@@ -76,6 +76,36 @@ func TestBuildAndInstallGo(t *testing.T) {
 	}
 }
 
+func TestBuildAndInstallGoCmdLayout(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PKGLINE_ROOT", filepath.Join(root, ".pkgline"))
+	t.Setenv("PKGLINE_BIN", "")
+	if err := path.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	pkg := filepath.Join(root, "pkg")
+	cmdDir := filepath.Join(pkg, "cmd", "demo")
+	if err := os.MkdirAll(cmdDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "go.mod"), []byte("module demo\n\ngo 1.20\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cmdDir, "main.go"), []byte("package main\nfunc main() {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m := &manifest.Manifest{}
+	m.Package.Name = "demo"
+	m.Package.Language = "go"
+	res, err := BuildAndInstall(pkg, m, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(res.ExecutablePath); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBuildAndInstallUnsupportedLanguageWithoutScript(t *testing.T) {
 	m := &manifest.Manifest{}
 	m.Package.Name = "py"

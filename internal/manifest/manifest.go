@@ -20,6 +20,7 @@ type PackageConfig struct {
 	Version    string `toml:"version"`
 	Language   string `toml:"language"`
 	Executable string `toml:"executable"`
+	MainPath   string `toml:"main_path"`
 }
 
 // ScriptConfig holds custom script hooks in pkgline.toml
