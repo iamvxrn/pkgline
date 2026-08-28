@@ -31,8 +31,12 @@ Invoke-Expression (Invoke-WebRequest -Uri "https://pkgline.pages.dev/install.ps1
 ```bash
 pkgline install gh:user/repository
 pkgline list
+pkgline remove package_name
 pkgline sync
+pkgline update package_name
 pkgline rollback package_name
+pkgline doctor
+pkgline completion bash
 ```
 
 ## Documentation
