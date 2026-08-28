@@ -100,24 +100,97 @@ func LoadFromFile(filePath string) (*Manifest, error) {
 }
 
 // LoadFromDir looks for pkgline.toml in directory and parses it.
-// If language is unset, infers make/cmake from Makefile or CMakeLists.txt.
+// If the file is missing, language is inferred from go.mod / Cargo.toml /
+// cbld.toml / CMakeLists.txt / Makefile / install.sh.
+// If language is unset in an existing manifest, infers make/cmake/go/rust/cbld the same way.
 func LoadFromDir(dir string) (*Manifest, error) {
 	target := filepath.Join(dir, ManifestFileName)
+	if !fileExists(target) {
+		m, err := inferManifest(dir)
+		if err != nil {
+			return nil, err
+		}
+		if err := m.Validate(); err != nil {
+			return nil, err
+		}
+		return m, nil
+	}
 	m, err := parseFile(target)
 	if err != nil {
 		return nil, err
 	}
 	if m.GetLanguage() == "" && strings.TrimSpace(m.Scripts.Install) == "" {
-		if fileExists(filepath.Join(dir, "CMakeLists.txt")) {
-			m.Package.Language = "cmake"
-		} else if fileExists(filepath.Join(dir, "Makefile")) || fileExists(filepath.Join(dir, "makefile")) {
-			m.Package.Language = "make"
+		if lang := inferLanguage(dir); lang != "" {
+			m.Package.Language = lang
+		} else if fileExists(filepath.Join(dir, "install.sh")) {
+			m.Scripts.Install = "install.sh"
 		}
 	}
 	if err := m.Validate(); err != nil {
 		return nil, err
 	}
 	return m, nil
+}
+
+func inferLanguage(dir string) string {
+	switch {
+	case fileExists(filepath.Join(dir, "go.mod")):
+		return "go"
+	case fileExists(filepath.Join(dir, "Cargo.toml")):
+		return "rust"
+	case fileExists(filepath.Join(dir, "cbld.toml")):
+		return "cbld"
+	case fileExists(filepath.Join(dir, "CMakeLists.txt")):
+		return "cmake"
+	case fileExists(filepath.Join(dir, "Makefile")) || fileExists(filepath.Join(dir, "makefile")):
+		return "make"
+	default:
+		return ""
+	}
+}
+
+func inferManifest(dir string) (*Manifest, error) {
+	name := filepath.Base(filepath.Clean(dir))
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		name = "package"
+	}
+	m := &Manifest{Package: PackageConfig{Name: name, Version: "0.0.0"}}
+	if lang := inferLanguage(dir); lang != "" {
+		m.Package.Language = lang
+		if lang == "go" {
+			if n := goModuleBaseName(dir); n != "" {
+				m.Package.Name = n
+			}
+		}
+		return m, nil
+	}
+	if fileExists(filepath.Join(dir, "install.sh")) {
+		m.Scripts.Install = "install.sh"
+		return m, nil
+	}
+	return nil, fmt.Errorf("cannot read manifest file %s: file does not exist (no go.mod, Cargo.toml, cbld.toml, CMakeLists.txt, Makefile, or install.sh to infer from)", targetPath(dir))
+}
+
+func targetPath(dir string) string {
+	return filepath.Join(dir, ManifestFileName)
+}
+
+func goModuleBaseName(dir string) string {
+	data, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "module "); ok {
+			mod := strings.TrimSpace(rest)
+			if i := strings.LastIndex(mod, "/"); i >= 0 {
+				return mod[i+1:]
+			}
+			return mod
+		}
+	}
+	return ""
 }
 
 func parseFile(filePath string) (*Manifest, error) {

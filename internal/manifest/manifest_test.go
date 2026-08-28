@@ -188,6 +188,29 @@ executable = "inferred"
 	}
 }
 
+func TestLoadFromDirInfersGoModWithoutManifest(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/tools/mycli\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := LoadFromDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.GetLanguage() != "go" {
+		t.Fatalf("language = %q", m.GetLanguage())
+	}
+	if m.Package.Name != "mycli" {
+		t.Fatalf("name = %q", m.Package.Name)
+	}
+}
+
+func TestLoadFromDirMissingEverythingFails(t *testing.T) {
+	if _, err := LoadFromDir(t.TempDir()); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestLoadFromDirInfersMake(t *testing.T) {
 	dir := t.TempDir()
 	toml := `
