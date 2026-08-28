@@ -4,7 +4,12 @@ export default defineConfig({
   title: "pkgline",
   description: "A single Go CLI for installing developer tools, orchestrating builds, and managing packages.",
   appearance: 'dark',
-  head: [['link', { rel: 'icon', href: '/favicon.svg' }]],
+  head: [
+    ['link', { rel: 'icon', href: '/favicon.svg' }],
+    ['meta', { property: 'og:image', content: 'https://pkgline.pages.dev/social.png' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:image', content: 'https://pkgline.pages.dev/social.png' }],
+  ],
   themeConfig: {
     logo: '/logo.svg',
     nav: [

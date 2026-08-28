@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="pkgline">
+  <defs>
+    <radialGradient id="glow" cx="78%" cy="42%" r="52%">
+      <stop offset="0" stop-color="#10b981" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#0f1211" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="640" fill="#0f1211"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+  <rect width="1280" height="6" fill="#10b981"/>
+  <g transform="translate(168, 188) scale(2.55)" fill="none" stroke="#10b981" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M50 16 L74 30 L50 44 L26 30 Z" fill="#10b981" fill-opacity="0.18"/>
+    <path d="M26 30 L26 58 L50 72"/>
+    <path d="M74 30 L74 58 L50 72"/>
+    <path d="M50 44 L50 72"/>
+    <path d="M22 86 L78 86"/>
+  </g>
+  <text x="468" y="318" font-family="Noto Sans, sans-serif" font-size="92" font-weight="700" fill="#eaefec">pkgline</text>
+  <text x="468" y="384" font-family="Noto Sans, sans-serif" font-size="32" font-weight="400" fill="#a9b3ad">Install developer tools from Git</text>
+</svg>

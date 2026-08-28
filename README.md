@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="website/docs/public/social.png" alt="pkgline — Install developer tools from Git" width="720">
+</p>
+
 # Pkgline
 
 A tool for downloading and building executables from Git repositories into the user's local directory.
