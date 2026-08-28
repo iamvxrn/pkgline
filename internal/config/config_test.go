@@ -40,6 +40,25 @@ func TestResolveURI(t *testing.T) {
 	}
 }
 
+func TestSplitRef(t *testing.T) {
+	tests := []struct {
+		in, spec, ref string
+	}{
+		{"gh:user/repo@v1.0.0", "gh:user/repo", "v1.0.0"},
+		{"owner/repo@main", "owner/repo", "main"},
+		{"https://github.com/a/b.git@v2", "https://github.com/a/b.git", "v2"},
+		{"git@github.com:a/b.git", "git@github.com:a/b.git", ""},
+		{"git@github.com:a/b.git@v1", "git@github.com:a/b.git", "v1"},
+		{"gh:user/repo", "gh:user/repo", ""},
+	}
+	for _, tt := range tests {
+		spec, ref := SplitRef(tt.in)
+		if spec != tt.spec || ref != tt.ref {
+			t.Errorf("SplitRef(%q) = %q, %q; want %q, %q", tt.in, spec, ref, tt.spec, tt.ref)
+		}
+	}
+}
+
 func TestLoadConfigMissingFileUsesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PKGLINE_CONFIG_DIR", dir)

@@ -49,14 +49,18 @@ func (ins *Installer) binFile(name string) string {
 
 // Install fetches, compiles/executes, and records a new package.
 func (ins *Installer) Install(rawURI string) error {
-	resolvedURI := ins.cfg.ResolveURI(rawURI)
+	spec, ref := config.SplitRef(rawURI)
+	resolvedURI := ins.cfg.ResolveURI(spec)
 	ui.LogInfo("Installing from %s...", resolvedURI)
+	if ref != "" {
+		ui.LogInfo("Using ref %s", ref)
+	}
 
 	// Stage clone in cache
 	stagingDir := filepath.Join(path.CacheDir(), fmt.Sprintf("staging-%d", time.Now().UnixNano()))
 	defer func() { _ = os.RemoveAll(stagingDir) }()
 
-	if err := git.Clone(resolvedURI, stagingDir); err != nil {
+	if err := git.Clone(resolvedURI, stagingDir, ref); err != nil {
 		return fmt.Errorf("failed to fetch package repository: %w", err)
 	}
 

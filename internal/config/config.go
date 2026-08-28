@@ -97,3 +97,23 @@ func (c *Config) ResolveURI(input string) string {
 
 	return input
 }
+
+// SplitRef peels an optional @tag, @branch, or @sha off a package spec.
+// git@host:path is left intact; a second @ is treated as the ref.
+func SplitRef(input string) (spec, ref string) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "", ""
+	}
+	if strings.HasPrefix(input, "git@") {
+		rest := input[len("git@"):]
+		if i := strings.LastIndex(rest, "@"); i >= 0 {
+			return "git@" + rest[:i], rest[i+1:]
+		}
+		return input, ""
+	}
+	if i := strings.LastIndex(input, "@"); i > 0 {
+		return input[:i], input[i+1:]
+	}
+	return input, ""
+}

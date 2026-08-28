@@ -19,7 +19,7 @@ func TestCloneLocalDirectoryCopiesNestedFiles(t *testing.T) {
 	}
 
 	dst := filepath.Join(t.TempDir(), "out")
-	if err := Clone(src, dst); err != nil {
+	if err := Clone(src, dst, ""); err != nil {
 		t.Fatalf("Clone local: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(dst, "sub", "pkgline.toml"))
@@ -33,12 +33,21 @@ func TestCloneLocalDirectoryCopiesNestedFiles(t *testing.T) {
 
 func TestCloneMissingPathFallsThroughToGitAndFails(t *testing.T) {
 	dst := filepath.Join(t.TempDir(), "out")
-	err := Clone(filepath.Join(t.TempDir(), "no-such-repo"), dst)
+	err := Clone(filepath.Join(t.TempDir(), "no-such-repo"), dst, "")
 	if err == nil {
 		t.Fatal("expected clone error")
 	}
 	if !strings.Contains(err.Error(), "git clone failed") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLooksLikeCommit(t *testing.T) {
+	if !looksLikeCommit("abcdef0") || !looksLikeCommit(strings.Repeat("a", 40)) {
+		t.Fatal("sha should match")
+	}
+	if looksLikeCommit("v1.0.0") || looksLikeCommit("main") || looksLikeCommit("abc") {
+		t.Fatal("branch/tag should not look like a commit")
 	}
 }
 

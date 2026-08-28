@@ -10,7 +10,8 @@ import (
 )
 
 // Clone clones a git repository or copies a local directory into targetDir.
-func Clone(uri string, targetDir string) error {
+// ref is an optional branch, tag, or commit; empty means the remote default.
+func Clone(uri string, targetDir string, ref string) error {
 	// If URI is a local directory, handle accordingly
 	fi, err := os.Stat(uri)
 	if err == nil && fi.IsDir() {
@@ -25,15 +26,42 @@ func Clone(uri string, targetDir string) error {
 		return nil
 	}
 
-	// Normal Git remote URL clone
-	cmd := exec.Command("git", "clone", "--depth", "1", "--recurse-submodules", "--shallow-submodules", uri, targetDir)
+	args := []string{"clone", "--depth", "1", "--recurse-submodules", "--shallow-submodules"}
+	if ref != "" && !looksLikeCommit(ref) {
+		args = append(args, "--branch", ref)
+	}
+	args = append(args, uri, targetDir)
+	cmd := exec.Command("git", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("git clone failed for %s: %s (%w)", uri, strings.TrimSpace(stderr.String()), err)
 	}
-
+	if ref != "" && looksLikeCommit(ref) {
+		fetch := exec.Command("git", "fetch", "--depth", "1", "origin", ref)
+		fetch.Dir = targetDir
+		if out, err := fetch.CombinedOutput(); err != nil {
+			return fmt.Errorf("git fetch %s failed: %s (%w)", ref, strings.TrimSpace(string(out)), err)
+		}
+		co := exec.Command("git", "checkout", "--detach", ref)
+		co.Dir = targetDir
+		if out, err := co.CombinedOutput(); err != nil {
+			return fmt.Errorf("git checkout %s failed: %s (%w)", ref, strings.TrimSpace(string(out)), err)
+		}
+	}
 	return nil
+}
+
+func looksLikeCommit(ref string) bool {
+	if len(ref) < 7 || len(ref) > 40 {
+		return false
+	}
+	for _, c := range ref {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 // Pull runs `git pull` inside repoDir and reports if updates were downloaded.
