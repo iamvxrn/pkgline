@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"pkgline/internal/config"
@@ -59,6 +61,14 @@ func (ins *Installer) Install(rawURI string) error {
 	// Stage clone in cache
 	stagingDir := filepath.Join(path.CacheDir(), fmt.Sprintf("staging-%d", time.Now().UnixNano()))
 	defer func() { _ = os.RemoveAll(stagingDir) }()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	go func() {
+		<-sigCh
+		_ = os.RemoveAll(stagingDir)
+		os.Exit(130)
+	}()
 
 	if err := git.Clone(resolvedURI, stagingDir, ref); err != nil {
 		return fmt.Errorf("failed to fetch package repository: %w", err)
