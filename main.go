@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"pkgline/internal/config"
 	"pkgline/internal/core"
+	"pkgline/internal/manifest"
 	"pkgline/internal/path"
 	"pkgline/internal/ui"
 )
@@ -26,6 +28,8 @@ Commands:
                       Flags: --lang <language>  --exec <name>
   run, r <uri> [-- --] Run package without installing (temp build, like npx)
                       Flags: --lang <language>  --exec <name>  -- <args> forwarded to binary
+  publish             Generate pkgline.toml interactively for current directory
+                      Flags: --force  --yes
   remove, rm <name>   Remove an installed package and its linked binary
   rollback <name>     Restore previous backup executable (.bak) for package
   sync, update [name] Pull latest changes and rebuild package(s) if updated
@@ -40,6 +44,145 @@ Global flags:
 `
 
 	fmt.Print(banner)
+}
+
+func runPublish(force, yes bool) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	target := filepath.Join(cwd, manifest.ManifestFileName)
+	if _, err := os.Stat(target); err == nil && !force {
+		return fmt.Errorf("pkgline.toml already exists at %s (use --force to overwrite)", target)
+	}
+
+	// Infer defaults.
+	defName := filepath.Base(cwd)
+	if defName == "." || defName == "/" || defName == "" {
+		defName = "my-package"
+	}
+	// Try to improve name from go.mod if present.
+	if data, err := os.ReadFile(filepath.Join(cwd, "go.mod")); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if rest, ok := strings.CutPrefix(line, "module "); ok {
+				mod := strings.TrimSpace(rest)
+				if idx := strings.LastIndex(mod, "/"); idx >= 0 {
+					mod = mod[idx+1:]
+				}
+				if mod != "" {
+					defName = mod
+				}
+				break
+			}
+		}
+	}
+	defVersion := "0.1.0"
+	defLang := ""
+	// Infer language like manifest does.
+	if _, err := os.Stat(filepath.Join(cwd, "go.mod")); err == nil {
+		defLang = "go"
+	} else if _, err := os.Stat(filepath.Join(cwd, "Cargo.toml")); err == nil {
+		defLang = "rust"
+	} else if _, err := os.Stat(filepath.Join(cwd, "cbld.toml")); err == nil {
+		defLang = "cbld"
+	} else if _, err := os.Stat(filepath.Join(cwd, "CMakeLists.txt")); err == nil {
+		defLang = "cmake"
+	} else if _, err := os.Stat(filepath.Join(cwd, "Makefile")); err == nil {
+		defLang = "make"
+	} else if _, err := os.Stat(filepath.Join(cwd, "makefile")); err == nil {
+		defLang = "make"
+	}
+	defExec := defName
+
+	reader := bufio.NewReader(os.Stdin)
+	prompt := func(label, def string) string {
+		if yes {
+			return def
+		}
+		if def != "" {
+			fmt.Printf("%s [%s]: ", label, def)
+		} else {
+			fmt.Printf("%s: ", label)
+		}
+		text, _ := reader.ReadString('\n')
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return def
+		}
+		return text
+	}
+
+	fmt.Println("Generating pkgline.toml — press Enter to accept defaults.")
+	name := prompt("Package name", defName)
+	version := prompt("Version", defVersion)
+	lang := prompt("Language (go, rust, cbld, c, cpp, make, cmake, or empty for script)", defLang)
+	execName := prompt("Executable name", defExec)
+
+	// Basic validation.
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("package name is required")
+	}
+	if strings.TrimSpace(lang) != "" {
+		switch strings.ToLower(strings.TrimSpace(lang)) {
+		case "go", "rust", "cbld", "c", "cpp", "make", "cmake":
+		default:
+			return fmt.Errorf("unsupported language %q", lang)
+		}
+	}
+
+	m := manifest.Manifest{
+		Package: manifest.PackageConfig{
+			Name:       strings.TrimSpace(name),
+			Version:    strings.TrimSpace(version),
+			Language:   strings.ToLower(strings.TrimSpace(lang)),
+			Executable: strings.TrimSpace(execName),
+		},
+	}
+	if m.Package.Executable == m.Package.Name {
+		m.Package.Executable = ""
+	}
+	if err := m.Validate(); err != nil {
+		// Allow script fallback: if language empty and no script, still require install script.
+		if strings.TrimSpace(lang) == "" {
+			// Prompt for install script if needed.
+			script := prompt("Install script (e.g. install.sh, empty to skip)", "")
+			if strings.TrimSpace(script) != "" {
+				m.Scripts.Install = strings.TrimSpace(script)
+				if err := m.Validate(); err != nil {
+					return err
+				}
+			} else {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	// Encode to TOML
+	var buf strings.Builder
+	buf.WriteString("[package]\n")
+	fmt.Fprintf(&buf, "name = %q\n", m.Package.Name)
+	fmt.Fprintf(&buf, "version = %q\n", m.Package.Version)
+	if strings.TrimSpace(m.Package.Language) != "" {
+		fmt.Fprintf(&buf, "language = %q\n", m.Package.Language)
+	}
+	if strings.TrimSpace(m.Package.Executable) != "" {
+		fmt.Fprintf(&buf, "executable = %q\n", m.Package.Executable)
+	}
+	if strings.TrimSpace(m.Scripts.Install) != "" {
+		buf.WriteString("\n[scripts]\n")
+		fmt.Fprintf(&buf, "install = %q\n", m.Scripts.Install)
+	}
+	content := buf.String()
+	if err := os.WriteFile(target, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write %s: %w", target, err)
+	}
+	ui.LogSuccess("Wrote %s", target)
+	fmt.Println("\nNext: git add pkgline.toml && git commit -m \"Add pkgline.toml\" && git push")
+	fmt.Println("Others can then install via: pkgline install gh:<owner>/<repo>")
+	return nil
 }
 
 func isHelpArg(s string) bool {
@@ -225,6 +368,33 @@ func main() {
 			os.Exit(1)
 		}
 
+	case "publish":
+		if len(os.Args) >= 3 && isHelpArg(os.Args[2]) {
+			fmt.Println("Usage: pkgline publish [--force] [--yes]")
+			fmt.Println("  Interactively generate pkgline.toml for the current directory.")
+			return
+		}
+		force := false
+		yes := false
+		for _, a := range os.Args[2:] {
+			switch a {
+			case "--force", "-f":
+				force = true
+			case "--yes", "-y":
+				yes = true
+			case "--help", "-h":
+				fmt.Println("Usage: pkgline publish [--force] [--yes]")
+				return
+			default:
+				ui.LogError("Unknown flag %q for publish", a)
+				os.Exit(1)
+			}
+		}
+		if err := runPublish(force, yes); err != nil {
+			ui.LogError("%v", err)
+			os.Exit(1)
+		}
+
 	case "remove", "rm", "uninstall":
 		if len(os.Args) >= 3 && isHelpArg(os.Args[2]) {
 			printUsage()
@@ -373,7 +543,7 @@ func printCompletion(shell string) {
 		fmt.Print(`# pkgline bash completion
 _pkgline_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
-    local cmds="install run remove rollback sync list doctor version help completion"
+    local cmds="install run publish remove rollback sync list doctor version help completion"
     if [ $COMP_CWORD -eq 1 ]; then
         COMPREPLY=( $(compgen -W "${cmds}" -- ${cur}) )
     fi
@@ -387,6 +557,7 @@ _pkgline() {
     commands=(
         'install:Install package from Git URL or spec'
         'run:Build and run without installing'
+        'publish:Generate pkgline.toml for current directory'
         'remove:Remove installed package'
         'rollback:Restore previous backup executable'
         'sync:Pull latest changes and rebuild package'
@@ -402,7 +573,7 @@ _pkgline "$@"
 	case "fish":
 		fmt.Print(`# pkgline fish completion
 complete -c pkgline -f
-complete -c pkgline -n "not __fish_seen_subcommand_from install run remove rollback sync list doctor version completion" -a "install run remove rollback sync list doctor version completion"
+complete -c pkgline -n "not __fish_seen_subcommand_from install run publish remove rollback sync list doctor version completion" -a "install run publish remove rollback sync list doctor version completion"
 `)
 	default:
 		ui.LogError("Unsupported shell '%s'. Supported shells: bash, zsh, fish", shell)
