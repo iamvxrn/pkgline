@@ -24,6 +24,8 @@ Usage:
 Commands:
   install, i <uri>    Install package from Git URL, gh:/gl:/cb:/sh: shorthand, alias, or local path
                       Flags: --lang <language>  --exec <name>
+  run, r <uri> [-- --] Run package without installing (temp build, like npx)
+                      Flags: --lang <language>  --exec <name>  -- <args> forwarded to binary
   remove, rm <name>   Remove an installed package and its linked binary
   rollback <name>     Restore previous backup executable (.bak) for package
   sync, update [name] Pull latest changes and rebuild package(s) if updated
@@ -110,6 +112,55 @@ func parseInstallArgs(args []string) (uri, lang, execName string, err error) {
 	return positional[0], lang, execName, nil
 }
 
+func parseRunArgs(args []string) (uri, lang, execName string, binArgs []string, err error) {
+	var positional []string
+	binArgs = []string{}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		take := func(flag string) (string, error) {
+			if i+1 >= len(args) {
+				return "", fmt.Errorf("missing value for %s", flag)
+			}
+			i++
+			return args[i], nil
+		}
+		switch {
+		case a == "--lang" || a == "--language":
+			lang, err = take(a)
+			if err != nil {
+				return "", "", "", nil, err
+			}
+		case strings.HasPrefix(a, "--lang="):
+			lang = strings.TrimPrefix(a, "--lang=")
+		case strings.HasPrefix(a, "--language="):
+			lang = strings.TrimPrefix(a, "--language=")
+		case a == "--exec" || a == "--executable":
+			execName, err = take(a)
+			if err != nil {
+				return "", "", "", nil, err
+			}
+		case strings.HasPrefix(a, "--exec="):
+			execName = strings.TrimPrefix(a, "--exec=")
+		case strings.HasPrefix(a, "--executable="):
+			execName = strings.TrimPrefix(a, "--executable=")
+		case a == "--":
+			binArgs = append(binArgs, args[i+1:]...)
+			i = len(args)
+		case strings.HasPrefix(a, "-") && a != "-":
+			return "", "", "", nil, fmt.Errorf("unknown flag %s", a)
+		default:
+			positional = append(positional, a)
+		}
+	}
+	if len(positional) == 0 {
+		return "", "", "", nil, fmt.Errorf("missing URI or package specification")
+	}
+	if len(positional) > 1 {
+		return "", "", "", nil, fmt.Errorf("unexpected extra argument %q", positional[1])
+	}
+	return positional[0], lang, execName, binArgs, nil
+}
+
 func main() {
 	jsonOut, args := stripJSONFlag(os.Args)
 	os.Args = args
@@ -144,6 +195,32 @@ func main() {
 			os.Exit(1)
 		}
 		if err := installer.InstallWith(uri, core.InstallOpts{Language: lang, Executable: execName}); err != nil {
+			ui.LogError("%v", err)
+			os.Exit(1)
+		}
+
+	case "run", "r":
+		if len(os.Args) >= 3 && isHelpArg(os.Args[2]) {
+			printUsage()
+			return
+		}
+		if len(os.Args) < 3 {
+			ui.LogError("Missing URI or package specification.")
+			fmt.Println("Usage: pkgline run [--lang <language>] [--exec <name>] <uri> [-- <args>]")
+			os.Exit(1)
+		}
+		uri, lang, execName, binArgs, err := parseRunArgs(os.Args[2:])
+		if err != nil {
+			ui.LogError("%v", err)
+			fmt.Println("Usage: pkgline run [--lang <language>] [--exec <name>] <uri> [-- <args>]")
+			os.Exit(1)
+		}
+		installer, err := core.NewInstaller()
+		if err != nil {
+			ui.LogError("%v", err)
+			os.Exit(1)
+		}
+		if err := installer.Run(uri, core.InstallOpts{Language: lang, Executable: execName}, binArgs); err != nil {
 			ui.LogError("%v", err)
 			os.Exit(1)
 		}
@@ -296,7 +373,7 @@ func printCompletion(shell string) {
 		fmt.Print(`# pkgline bash completion
 _pkgline_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
-    local cmds="install remove rollback sync list doctor version help completion"
+    local cmds="install run remove rollback sync list doctor version help completion"
     if [ $COMP_CWORD -eq 1 ]; then
         COMPREPLY=( $(compgen -W "${cmds}" -- ${cur}) )
     fi
@@ -309,7 +386,7 @@ _pkgline() {
     local -a commands
     commands=(
         'install:Install package from Git URL or spec'
-
+        'run:Build and run without installing'
         'remove:Remove installed package'
         'rollback:Restore previous backup executable'
         'sync:Pull latest changes and rebuild package'
@@ -325,7 +402,7 @@ _pkgline "$@"
 	case "fish":
 		fmt.Print(`# pkgline fish completion
 complete -c pkgline -f
-complete -c pkgline -n "not __fish_seen_subcommand_from install remove rollback sync list doctor version completion" -a "install remove rollback sync list doctor version completion"
+complete -c pkgline -n "not __fish_seen_subcommand_from install run remove rollback sync list doctor version completion" -a "install run remove rollback sync list doctor version completion"
 `)
 	default:
 		ui.LogError("Unsupported shell '%s'. Supported shells: bash, zsh, fish", shell)

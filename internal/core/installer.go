@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -170,6 +171,85 @@ func (ins *Installer) InstallWith(rawURI string, opts InstallOpts) error {
 	ui.LogInfo("Binary linked at: %s", buildRes.ExecutablePath)
 	ui.CheckPathWarning()
 
+	return nil
+}
+
+// Run fetches, builds to a temp bin and executes without persisting to inventory.
+func (ins *Installer) Run(rawURI string, opts InstallOpts, binArgs []string) error {
+	spec, ref := config.SplitRef(rawURI)
+	resolvedURI := ins.cfg.ResolveURI(spec)
+	ui.LogInfo("Running %s ...", resolvedURI)
+	if ref != "" {
+		ui.LogInfo("Using ref %s", ref)
+	}
+
+	stagingDir := filepath.Join(path.CacheDir(), fmt.Sprintf("run-staging-%d", time.Now().UnixNano()))
+	tempBinDir := filepath.Join(os.TempDir(), fmt.Sprintf("pkgline-run-bin-%d", time.Now().UnixNano()))
+	// Ensure cleanup.
+	defer func() { _ = os.RemoveAll(stagingDir) }()
+	defer func() { _ = os.RemoveAll(tempBinDir) }()
+	if err := os.MkdirAll(tempBinDir, 0755); err != nil {
+		return fmt.Errorf("failed to create temp bin dir: %w", err)
+	}
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	go func() {
+		<-sigCh
+		_ = os.RemoveAll(stagingDir)
+		_ = os.RemoveAll(tempBinDir)
+		os.Exit(130)
+	}()
+
+	if err := git.Clone(resolvedURI, stagingDir, ref); err != nil {
+		return fmt.Errorf("failed to fetch package repository: %w", err)
+	}
+
+	m, err := manifest.LoadFromDir(stagingDir)
+	if err != nil {
+		if strings.TrimSpace(opts.Language) == "" && strings.TrimSpace(opts.Executable) == "" {
+			return fmt.Errorf("failed to read package manifest: %w", err)
+		}
+		m = &manifest.Manifest{
+			Package: manifest.PackageConfig{
+				Name:    nameFromURI(resolvedURI),
+				Version: "0.0.0",
+			},
+		}
+	}
+	if err := m.ApplyOverrides(opts.Language, opts.Executable); err != nil {
+		return fmt.Errorf("failed to apply run overrides: %w", err)
+	}
+
+	buildRes, err := BuildAndInstall(stagingDir, m, tempBinDir)
+	if err != nil {
+		return err
+	}
+
+	binPath := buildRes.ExecutablePath
+	if _, err := os.Stat(binPath); err != nil {
+		// Fallback: tempBinDir + execName
+		binPath = filepath.Join(tempBinDir, m.GetExecutable())
+		if _, err2 := os.Stat(binPath); err2 != nil {
+			return fmt.Errorf("built binary not found at %s", binPath)
+		}
+	}
+
+	ui.LogInfo("Executing %s %s", binPath, strings.Join(binArgs, " "))
+	cmd := exec.Command(binPath, binArgs...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	// Keep working dir as staging for packages that expect resources relative to source.
+	cmd.Dir = stagingDir
+	if err := cmd.Run(); err != nil {
+		_ = os.RemoveAll(stagingDir)
+		_ = os.RemoveAll(tempBinDir)
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		return err
+	}
 	return nil
 }
 
