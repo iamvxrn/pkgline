@@ -169,10 +169,11 @@ spec = "gh:e/f --lang go"
 }
 
 func TestResolvedURI(t *testing.T) {
-	base := "/tmp/project"
+	base := filepath.Join(string(filepath.Separator), "tmp", "project")
 	e := Entry{URI: "./local/pkg"}
-	if got := e.ResolvedURI(base); got != "/tmp/project/local/pkg" {
-		t.Fatalf("relative got %q", got)
+	want := filepath.Join(base, "local", "pkg")
+	if got := e.ResolvedURI(base); got != want {
+		t.Fatalf("relative got %q want %q", got, want)
 	}
 	e2 := Entry{URI: "gh:a/b"}
 	if got := e2.ResolvedURI(base); got != "gh:a/b" {

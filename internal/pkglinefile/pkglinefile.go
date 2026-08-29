@@ -66,9 +66,9 @@ func (e Entry) ResolvedURI(baseDir string) string {
 }
 
 const (
-	PrimaryName   = "Pkglinefile"
-	FallbackName  = "Pkglinefile.toml"
-	LegacyName    = ".pkglinefile"
+	PrimaryName  = "Pkglinefile"
+	FallbackName = "Pkglinefile.toml"
+	LegacyName   = ".pkglinefile"
 )
 
 // Discover walks up from dir to find a Pkglinefile.
