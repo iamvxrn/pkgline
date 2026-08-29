@@ -12,6 +12,7 @@ import (
 	"pkgline/internal/core"
 	"pkgline/internal/manifest"
 	"pkgline/internal/path"
+	"pkgline/internal/pkglinefile"
 	"pkgline/internal/ui"
 )
 
@@ -30,6 +31,8 @@ Commands:
                       Flags: --lang <language>  --exec <name>  -- <args> forwarded to binary
   publish             Generate pkgline.toml interactively for current directory
                       Flags: --force  --yes
+  bootstrap           Install all packages from Pkglinefile
+                      Flags: --file <path>  --dry-run
   remove, rm <name>   Remove an installed package and its linked binary
   rollback <name>     Restore previous backup executable (.bak) for package
   sync, update [name] Pull latest changes and rebuild package(s) if updated
@@ -255,6 +258,29 @@ func parseInstallArgs(args []string) (uri, lang, execName string, err error) {
 	return positional[0], lang, execName, nil
 }
 
+func parseBootstrapArgs(args []string) (filePath string, dryRun bool, err error) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--file" || a == "-f":
+			if i+1 >= len(args) {
+				return "", false, fmt.Errorf("missing value for %s", a)
+			}
+			i++
+			filePath = args[i]
+		case strings.HasPrefix(a, "--file="):
+			filePath = strings.TrimPrefix(a, "--file=")
+		case a == "--dry-run" || a == "-n":
+			dryRun = true
+		case strings.HasPrefix(a, "-") && a != "-":
+			return "", false, fmt.Errorf("unknown flag %s", a)
+		default:
+			return "", false, fmt.Errorf("unexpected argument %q", a)
+		}
+	}
+	return filePath, dryRun, nil
+}
+
 func parseRunArgs(args []string) (uri, lang, execName string, binArgs []string, err error) {
 	var positional []string
 	binArgs = []string{}
@@ -394,6 +420,87 @@ func main() {
 			ui.LogError("%v", err)
 			os.Exit(1)
 		}
+
+	case "bootstrap":
+		if len(os.Args) >= 3 && isHelpArg(os.Args[2]) {
+			fmt.Println("Usage: pkgline bootstrap [--file <path>] [--dry-run]")
+			fmt.Println("  Install all packages from Pkglinefile (walks up from cwd).")
+			return
+		}
+		bFile, dryRun, err := parseBootstrapArgs(os.Args[2:])
+		if err != nil {
+			ui.LogError("%v", err)
+			fmt.Println("Usage: pkgline bootstrap [--file <path>] [--dry-run]")
+			os.Exit(1)
+		}
+		if bFile != "" && isHelpArg(bFile) {
+			fmt.Println("Usage: pkgline bootstrap [--file <path>] [--dry-run]")
+			return
+		}
+		var pfPath string
+		if bFile != "" {
+			pfPath = bFile
+			if _, err := os.Stat(pfPath); err != nil {
+				ui.LogError("Pkglinefile not found at %s", pfPath)
+				os.Exit(1)
+			}
+		} else {
+			cwd, _ := os.Getwd()
+			pfPath, err = pkglinefile.Discover(cwd)
+			if err != nil {
+				ui.LogError("%v", err)
+				os.Exit(1)
+			}
+			if pfPath == "" {
+				ui.LogError("No Pkglinefile found (searched up from %s). Create one with one package per line.", cwd)
+				fmt.Println("Example Pkglinefile:")
+				fmt.Println("  gh:user/repo")
+				fmt.Println("  gh:user/other@v1.2.0 --lang go --exec mybin")
+				os.Exit(1)
+			}
+		}
+		pf, err := pkglinefile.ParseFile(pfPath)
+		if err != nil {
+			ui.LogError("Failed to parse %s: %v", pfPath, err)
+			os.Exit(1)
+		}
+		if len(pf.Entries) == 0 {
+			ui.LogWarning("No packages in %s", pfPath)
+			return
+		}
+		ui.LogInfo("Found %d package(s) in %s", len(pf.Entries), pfPath)
+		if dryRun {
+			for _, e := range pf.Entries {
+				extra := ""
+				if e.Lang != "" {
+					extra += " --lang " + e.Lang
+				}
+				if e.Exec != "" {
+					extra += " --exec " + e.Exec
+				}
+				fmt.Printf("  would install: %s%s\n", e.URI, extra)
+			}
+			return
+		}
+		installer, err := core.NewInstaller()
+		if err != nil {
+			ui.LogError("%v", err)
+			os.Exit(1)
+		}
+		failed := 0
+		for _, e := range pf.Entries {
+			ui.LogInfo("Bootstrapping %s ...", e.URI)
+			if err := installer.InstallWith(e.URI, core.InstallOpts{Language: e.Lang, Executable: e.Exec}); err != nil {
+				ui.LogError("Failed %s: %v", e.URI, err)
+				failed++
+				continue
+			}
+		}
+		if failed > 0 {
+			ui.LogWarning("Bootstrap complete with %d failure(s) / %d total", failed, len(pf.Entries))
+			os.Exit(1)
+		}
+		ui.LogSuccess("Bootstrap complete: %d package(s) from %s", len(pf.Entries), pfPath)
 
 	case "remove", "rm", "uninstall":
 		if len(os.Args) >= 3 && isHelpArg(os.Args[2]) {
@@ -543,7 +650,7 @@ func printCompletion(shell string) {
 		fmt.Print(`# pkgline bash completion
 _pkgline_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
-    local cmds="install run publish remove rollback sync list doctor version help completion"
+    local cmds="install run publish bootstrap remove rollback sync list doctor version help completion"
     if [ $COMP_CWORD -eq 1 ]; then
         COMPREPLY=( $(compgen -W "${cmds}" -- ${cur}) )
     fi
@@ -558,6 +665,7 @@ _pkgline() {
         'install:Install package from Git URL or spec'
         'run:Build and run without installing'
         'publish:Generate pkgline.toml for current directory'
+        'bootstrap:Install all packages from Pkglinefile'
         'remove:Remove installed package'
         'rollback:Restore previous backup executable'
         'sync:Pull latest changes and rebuild package'
@@ -573,7 +681,7 @@ _pkgline "$@"
 	case "fish":
 		fmt.Print(`# pkgline fish completion
 complete -c pkgline -f
-complete -c pkgline -n "not __fish_seen_subcommand_from install run publish remove rollback sync list doctor version completion" -a "install run publish remove rollback sync list doctor version completion"
+complete -c pkgline -n "not __fish_seen_subcommand_from install run publish bootstrap remove rollback sync list doctor version completion" -a "install run publish bootstrap remove rollback sync list doctor version completion"
 `)
 	default:
 		ui.LogError("Unsupported shell '%s'. Supported shells: bash, zsh, fish", shell)
