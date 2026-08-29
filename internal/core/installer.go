@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -362,13 +363,14 @@ func (ins *Installer) Sync(targetPkg string) error {
 
 	ui.LogInfo("Syncing %d package(s)...", len(packages))
 
-	for _, rec := range packages {
+	// Fast path for single package: avoid goroutine overhead and keep logs ordered.
+	if len(packages) == 1 {
+		rec := packages[0]
 		appDir := ins.appPath(rec.Name)
 		if _, err := os.Stat(appDir); os.IsNotExist(err) {
 			ui.LogWarning("App directory for '%s' not found (%s). Skipping sync.", rec.Name, appDir)
-			continue
+			return nil
 		}
-
 		ui.LogInfo("Syncing package '%s'...", rec.Name)
 		pulled := false
 		if git.IsGitRepo(appDir) {
@@ -376,16 +378,14 @@ func (ins *Installer) Sync(targetPkg string) error {
 			pulled, err = git.Pull(appDir)
 			if err != nil {
 				ui.LogWarning("Failed to pull updates for '%s': %v. Continuing sync...", rec.Name, err)
-				continue
+				return nil
 			}
 		}
-
 		m, err := manifest.LoadFromDir(appDir)
 		if err != nil {
 			ui.LogWarning("Failed to parse manifest for '%s' after pull: %v. Continuing sync...", rec.Name, err)
-			continue
+			return nil
 		}
-
 		newCommit := rec.GitCommit
 		if git.IsGitRepo(appDir) {
 			if c, err := git.GetHeadCommit(appDir); err == nil {
@@ -394,11 +394,8 @@ func (ins *Installer) Sync(targetPkg string) error {
 		}
 		versionChanged := m.Package.Version != rec.Version
 		commitChanged := newCommit != rec.GitCommit
-
 		if pulled || versionChanged || commitChanged {
-			ui.LogInfo("Rebuilding '%s' (Version: %s -> %s, Commit: %s)...",
-				rec.Name, rec.Version, m.Package.Version, shortenHash(newCommit))
-
+			ui.LogInfo("Rebuilding '%s' (Version: %s -> %s, Commit: %s)...", rec.Name, rec.Version, m.Package.Version, shortenHash(newCommit))
 			binName := rec.Executable
 			if binName == "" {
 				binName = m.GetExecutable()
@@ -408,27 +405,93 @@ func (ins *Installer) Sync(targetPkg string) error {
 				_ = copyFile(binPath, binPath+".bak")
 				_ = writeRollbackMeta(binPath, rec)
 			}
-
 			buildRes, err := BuildAndInstall(appDir, m, ins.cfg.BinDir)
 			if err != nil {
-				ui.LogError("Rebuild failed for '%s': %v. Continuing sync...", rec.Name, err)
-				continue
+				ui.LogError("Rebuild failed for '%s': %v.", rec.Name, err)
+				return nil
 			}
-
-			// Update record
 			rec.Version = m.Package.Version
 			rec.GitCommit = newCommit
 			rec.Executable = buildRes.ExecutableName
 			rec.BinPath = buildRes.ExecutablePath
 			rec.InstallType = buildRes.InstallType
 			rec.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
-
 			_ = ins.store.Set(rec)
 			ui.LogSuccess("Package '%s' updated to v%s!", rec.Name, rec.Version)
 		} else {
 			ui.LogSuccess("Package '%s' is up to date (v%s).", rec.Name, rec.Version)
 		}
+		return nil
 	}
+
+	// Parallel sync for multiple packages.
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for _, r := range packages {
+		rec := r
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			appDir := ins.appPath(rec.Name)
+			if _, err := os.Stat(appDir); os.IsNotExist(err) {
+				ui.LogWarning("App directory for '%s' not found (%s). Skipping sync.", rec.Name, appDir)
+				return
+			}
+			ui.LogInfo("Syncing package '%s'...", rec.Name)
+			pulled := false
+			if git.IsGitRepo(appDir) {
+				var err error
+				pulled, err = git.Pull(appDir)
+				if err != nil {
+					ui.LogWarning("Failed to pull updates for '%s': %v. Continuing sync...", rec.Name, err)
+					return
+				}
+			}
+			m, err := manifest.LoadFromDir(appDir)
+			if err != nil {
+				ui.LogWarning("Failed to parse manifest for '%s' after pull: %v. Continuing sync...", rec.Name, err)
+				return
+			}
+			newCommit := rec.GitCommit
+			if git.IsGitRepo(appDir) {
+				if c, err := git.GetHeadCommit(appDir); err == nil {
+					newCommit = c
+				}
+			}
+			versionChanged := m.Package.Version != rec.Version
+			commitChanged := newCommit != rec.GitCommit
+			if pulled || versionChanged || commitChanged {
+				ui.LogInfo("Rebuilding '%s' (Version: %s -> %s, Commit: %s)...", rec.Name, rec.Version, m.Package.Version, shortenHash(newCommit))
+				binName := rec.Executable
+				if binName == "" {
+					binName = m.GetExecutable()
+				}
+				binPath := ins.binFile(binName)
+				if _, err := os.Stat(binPath); err == nil {
+					_ = copyFile(binPath, binPath+".bak")
+					_ = writeRollbackMeta(binPath, rec)
+				}
+				buildRes, err := BuildAndInstall(appDir, m, ins.cfg.BinDir)
+				if err != nil {
+					ui.LogError("Rebuild failed for '%s': %v. Continuing sync...", rec.Name, err)
+					return
+				}
+				rec.Version = m.Package.Version
+				rec.GitCommit = newCommit
+				rec.Executable = buildRes.ExecutableName
+				rec.BinPath = buildRes.ExecutablePath
+				rec.InstallType = buildRes.InstallType
+				rec.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
+				_ = ins.store.Set(rec)
+				ui.LogSuccess("Package '%s' updated to v%s!", rec.Name, rec.Version)
+			} else {
+				ui.LogSuccess("Package '%s' is up to date (v%s).", rec.Name, rec.Version)
+			}
+		}()
+	}
+	wg.Wait()
 
 	return nil
 }
