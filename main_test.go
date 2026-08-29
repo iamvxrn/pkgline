@@ -45,6 +45,30 @@ func TestParseBootstrapArgs(t *testing.T) {
 	}
 }
 
+func TestParseSearchArgs(t *testing.T) {
+	q, n, err := parseSearchArgs([]string{"--limit", "5", "json", "parser"})
+	if err != nil || q != "json parser" || n != 5 {
+		t.Fatalf("got q=%q n=%d err=%v", q, n, err)
+	}
+	q, n, err = parseSearchArgs([]string{"--limit=2", "a"})
+	if err != nil || q != "a" || n != 2 {
+		t.Fatalf("limit=: %q %d %v", q, n, err)
+	}
+	q, n, err = parseSearchArgs([]string{"hello"})
+	if err != nil || q != "hello" || n != 10 {
+		t.Fatalf("default: %q %d %v", q, n, err)
+	}
+	if _, _, err := parseSearchArgs(nil); err == nil {
+		t.Fatal("want missing query")
+	}
+	if _, _, err := parseSearchArgs([]string{"--limit", "bad", "x"}); err == nil {
+		t.Fatal("want bad limit")
+	}
+	if _, _, err := parseSearchArgs([]string{"--bogus", "x"}); err == nil {
+		t.Fatal("want unknown flag")
+	}
+}
+
 func TestParseInstallArgs(t *testing.T) {
 	uri, lang, execName, err := parseInstallArgs([]string{"--lang", "go", "--exec=mybin", "gh:user/repo"})
 	if err != nil || uri != "gh:user/repo" || lang != "go" || execName != "mybin" {
@@ -81,7 +105,7 @@ func TestStripJSONFlag(t *testing.T) {
 
 func TestPrintUsage(t *testing.T) {
 	out := captureStdout(t, printUsage)
-	for _, want := range []string{"install", "bootstrap", "doctor", "--json", "--lang", "--exec"} {
+	for _, want := range []string{"install", "bootstrap", "search", "doctor", "--json", "--lang", "--exec"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("usage missing %q:\n%s", want, out)
 		}

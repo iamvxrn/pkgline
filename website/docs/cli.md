@@ -49,6 +49,16 @@ pkgline sync [package-name]
 
 Rebuilds only when `git pull` moved, version changed, or commit differs. Identical `OS+arch+commit+version+lang` builds hit the global cache at `~/.pkgline/cache/prebuilt` and skip recompilation.
 
+## `search`
+
+```bash
+pkgline search <query>
+pkgline search --limit 5 json parser
+pkgline search --json "http client" | jq
+```
+
+Searches GitHub for repositories containing `pkgline.toml` (via `pkgline.toml in:path <query>` code search). Deduplicates by repo, shows stars and `pkgline install` hint. Requires `GITHUB_TOKEN`/`GH_TOKEN` for code search auth; without it GitHub returns 401/rate-limit.
+
 ## `cache`
 
 Binary cache lives at `~/.pkgline/cache/prebuilt/<hash>/<bin>` where `<hash>` is `sha256(uri|commit|version|lang|exec|GOOS|GOARCH|goVersion)[:16]`. Populated after each successful build, consulted on `install` and `sync`. Best-effort — cache failures never fail an install.
