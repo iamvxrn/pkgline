@@ -487,10 +487,12 @@ func main() {
 			ui.LogError("%v", err)
 			os.Exit(1)
 		}
+		baseDir := filepath.Dir(pfPath)
 		failed := 0
 		for _, e := range pf.Entries {
+			uri := e.ResolvedURI(baseDir)
 			ui.LogInfo("Bootstrapping %s ...", e.URI)
-			if err := installer.InstallWith(e.URI, core.InstallOpts{Language: e.Lang, Executable: e.Exec}); err != nil {
+			if err := installer.InstallWith(uri, core.InstallOpts{Language: e.Lang, Executable: e.Exec}); err != nil {
 				ui.LogError("Failed %s: %v", e.URI, err)
 				failed++
 				continue

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 )
 
 // Entry is one package spec from Pkglinefile.
@@ -22,6 +24,45 @@ type Entry struct {
 type File struct {
 	Path    string
 	Entries []Entry
+}
+
+// ResolvedURI returns URI resolved relative to the file's directory for local paths.
+// Shorthand (gh:/gl:/cb:/sh:) and URLs are returned unchanged.
+// Relative paths like ./tool or ../repo are joined with the Pkglinefile dir.
+func (e Entry) ResolvedURI(baseDir string) string {
+	uri := strings.TrimSpace(e.URI)
+	if uri == "" {
+		return uri
+	}
+	// Shorthand or URL: leave as is.
+	if strings.Contains(uri, "://") || strings.HasPrefix(uri, "git@") {
+		return uri
+	}
+	if strings.HasPrefix(uri, "gh:") || strings.HasPrefix(uri, "gl:") || strings.HasPrefix(uri, "cb:") || strings.HasPrefix(uri, "sh:") {
+		return uri
+	}
+	// Bare owner/repo (github shorthand) contains single slash without dot prefix and no path separators at start.
+	// Leave it; config will resolve to github.
+	// Local path: starts with . / ~ or contains / with leading .
+	if strings.HasPrefix(uri, ".") || strings.HasPrefix(uri, "/") || strings.HasPrefix(uri, "~") {
+		if !filepath.IsAbs(uri) {
+			// Expand ~ ?
+			if strings.HasPrefix(uri, "~/") || uri == "~" {
+				return uri // let config/path handle ~ later
+			}
+			return filepath.Join(baseDir, uri)
+		}
+		return uri
+	}
+	// If uri looks like a local relative path without prefix but the file exists relative to baseDir, resolve it.
+	// Heuristic: contains "/" and no colon, and file exists as dir.
+	if strings.Contains(uri, "/") && !strings.Contains(uri, ":") {
+		candidate := filepath.Join(baseDir, uri)
+		if st, err := os.Stat(candidate); err == nil && st.IsDir() {
+			return candidate
+		}
+	}
+	return uri
 }
 
 const (
@@ -276,37 +317,111 @@ func splitFields(s string) ([]string, error) {
 // packages = ["gh:a/b", "gh:c/d --lang go"]
 // or [[packages]] uri="..." lang="..."
 func parseToml(data []byte, path string) (*File, error) {
-	// Minimal TOML parsing: try two shapes via BurntSushi/toml if available.
-	// To avoid importing toml for plain files, we use a tiny manual fallback:
-	// If toml library is not wanted, we just return nil to fallback to lines.
-	// But we do attempt via generic map using BurntSushi/toml when present.
-	// To keep this package dependency-light, we implement a small heuristic:
-	// Look for "packages" key; if present, extract quoted strings.
-	// This intentionally avoids adding a hard import for step 1.
-	// Full TOML support will be wired with go.mod dependency in next step if needed.
-	// For now, handle the common case: extract all quoted strings after packages.
+	// Shape 1: packages = ["..."] (array of strings, each may contain flags)
+	var s1 struct {
+		Packages []string `toml:"packages"`
+	}
+	if err := toml.Unmarshal(data, &s1); err == nil && len(s1.Packages) > 0 {
+		f := &File{Path: path}
+		for i, spec := range s1.Packages {
+			spec = strings.TrimSpace(spec)
+			if spec == "" || strings.HasPrefix(spec, "#") {
+				continue
+			}
+			e, err := parseLine(spec, i+1)
+			if err != nil {
+				return nil, fmt.Errorf("packages[%d]: %w", i, err)
+			}
+			f.Entries = append(f.Entries, e)
+		}
+		if len(f.Entries) > 0 {
+			return f, nil
+		}
+	}
+	// Shape 2: [[packages]] tables with uri/spec + optional lang/exec
+	var s2 struct {
+		Packages []struct {
+			URI        string `toml:"uri"`
+			URL        string `toml:"url"`
+			Spec       string `toml:"spec"`
+			Lang       string `toml:"lang"`
+			Language   string `toml:"language"`
+			Exec       string `toml:"exec"`
+			Executable string `toml:"executable"`
+		} `toml:"packages"`
+	}
+	if err := toml.Unmarshal(data, &s2); err == nil && len(s2.Packages) > 0 {
+		f := &File{Path: path}
+		for i, p := range s2.Packages {
+			raw := p.Spec
+			if raw == "" {
+				raw = p.URI
+			}
+			if raw == "" {
+				raw = p.URL
+			}
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				return nil, fmt.Errorf("packages[%d]: missing uri", i)
+			}
+			// If spec already contains flags, parse it; else use explicit fields.
+			var e Entry
+			if strings.Contains(raw, " --") {
+				var err error
+				e, err = parseLine(raw, i+1)
+				if err != nil {
+					return nil, err
+				}
+				// explicit fields override flags if present
+				if p.Lang != "" {
+					e.Lang = p.Lang
+				} else if p.Language != "" {
+					e.Lang = p.Language
+				}
+				if p.Exec != "" {
+					e.Exec = p.Exec
+				} else if p.Executable != "" {
+					e.Exec = p.Executable
+				}
+			} else {
+				e = Entry{
+					Spec: raw,
+					URI:  raw,
+					Lang: p.Lang,
+					Exec: p.Exec,
+					Line: i + 1,
+				}
+				if e.Lang == "" {
+					e.Lang = p.Language
+				}
+				if e.Exec == "" {
+					e.Exec = p.Executable
+				}
+			}
+			f.Entries = append(f.Entries, e)
+		}
+		if len(f.Entries) > 0 {
+			return f, nil
+		}
+	}
+	// Fallback: heuristic for informal TOML where BurntSushi strict fails (e.g. commented arrays)
 	text := string(data)
 	if !strings.Contains(text, "packages") {
 		return nil, fmt.Errorf("no packages key")
 	}
-	// Very small extraction: find all "..." after the packages assignment.
-	// Real TOML parsing will be added explicitly; this is enough for dry-run discovery.
 	f := &File{Path: path}
-	// Naive: extract lines that look like "uri = "..."" or array elements "..."
 	lines := strings.Split(text, "\n")
 	for idx, line := range lines {
 		trim := strings.TrimSpace(line)
 		if trim == "" || strings.HasPrefix(trim, "#") {
 			continue
 		}
-		// Extract quoted values that contain : or / or . (likely URI)
 		quoted := extractQuoted(trim)
 		for _, q := range quoted {
 			if q == "packages" {
 				continue
 			}
 			if strings.Contains(q, "/") || strings.Contains(q, ":") {
-				// treat as spec line
 				entry, err := parseLine(q, idx+1)
 				if err != nil {
 					continue

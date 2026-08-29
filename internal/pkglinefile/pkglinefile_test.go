@@ -136,3 +136,50 @@ packages = ["gh:a/b", "gh:c/d --lang go"]
 		t.Fatalf("toml lang %+v", f.Entries[1])
 	}
 }
+
+func TestParseTomlTables(t *testing.T) {
+	toml := `
+[[packages]]
+uri = "gh:a/b"
+lang = "rust"
+
+[[packages]]
+uri = "gh:c/d"
+exec = "mybin"
+
+[[packages]]
+spec = "gh:e/f --lang go"
+`
+	f, err := ParseReader(strings.NewReader(toml), "Pkglinefile.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Entries) != 3 {
+		t.Fatalf("want 3 got %d %+v", len(f.Entries), f.Entries)
+	}
+	if f.Entries[0].URI != "gh:a/b" || f.Entries[0].Lang != "rust" {
+		t.Fatalf("0 %+v", f.Entries[0])
+	}
+	if f.Entries[1].Exec != "mybin" {
+		t.Fatalf("1 %+v", f.Entries[1])
+	}
+	if f.Entries[2].Lang != "go" || f.Entries[2].URI != "gh:e/f" {
+		t.Fatalf("2 %+v", f.Entries[2])
+	}
+}
+
+func TestResolvedURI(t *testing.T) {
+	base := "/tmp/project"
+	e := Entry{URI: "./local/pkg"}
+	if got := e.ResolvedURI(base); got != "/tmp/project/local/pkg" {
+		t.Fatalf("relative got %q", got)
+	}
+	e2 := Entry{URI: "gh:a/b"}
+	if got := e2.ResolvedURI(base); got != "gh:a/b" {
+		t.Fatalf("shorthand got %q", got)
+	}
+	e3 := Entry{URI: "https://github.com/a/b.git"}
+	if got := e3.ResolvedURI(base); got != "https://github.com/a/b.git" {
+		t.Fatalf("url got %q", got)
+	}
+}
