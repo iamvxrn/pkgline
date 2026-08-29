@@ -11,10 +11,10 @@ import (
 )
 
 // Key returns a stable cache key for a built binary.
-// Inputs: original URI, git commit (or file hash for local), language, executable name, OS/arch.
-func Key(uri, commit, lang, execName string) string {
+// Inputs: original URI, git commit (or file hash for local), version, language, executable name, OS/arch.
+func Key(uri, commit, version, lang, execName string) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s", uri, commit, lang, execName, runtime.GOOS, runtime.GOARCH, goVersion())
+	fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s|%s", uri, commit, version, lang, execName, runtime.GOOS, runtime.GOARCH, goVersion())
 	sum := fmt.Sprintf("%x", h.Sum(nil))
 	return sum[:16]
 }

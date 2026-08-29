@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"pkgline/internal/cache"
 	"pkgline/internal/config"
 	"pkgline/internal/db"
 	"pkgline/internal/git"
@@ -119,6 +120,11 @@ func (ins *Installer) InstallWith(rawURI string, opts InstallOpts) error {
 		}
 	}
 
+	// Cache key from commit in staging (pre-move)
+	commitForCache, _ := git.GetHeadCommit(stagingDir)
+	cacheKey := cache.Key(resolvedURI, commitForCache, m.Package.Version, m.GetLanguage(), binName)
+	cachedPath, cacheHit := cache.Lookup(cacheKey, binName)
+
 	// If app already exists, remove existing directory for clean install
 	if _, err := os.Stat(appDir); err == nil {
 		ui.LogInfo("Overwriting existing installation of '%s'...", pkgName)
@@ -133,19 +139,42 @@ func (ins *Installer) InstallWith(rawURI string, opts InstallOpts) error {
 		}
 	}
 
-	// Perform smart installation build/script execution
-	buildRes, err := BuildAndInstall(appDir, m, ins.cfg.BinDir)
-	if err != nil {
-		_ = os.RemoveAll(appDir) // Clean up target directory on build failure
-		// Restore binary backup if available
-		if _, statErr := os.Stat(bakPath); statErr == nil {
-			_ = copyFile(bakPath, binPath)
+	var buildRes *BuildResult
+	if cacheHit {
+		ui.LogInfo("Cache hit for %s [%s] — restoring %s", pkgName, cacheKey[:7], cachedPath)
+		if err := cache.Restore(cacheKey, binName, binPath); err != nil {
+			ui.LogWarning("Cache restore failed, rebuilding: %v", err)
+			cacheHit = false
+		} else {
+			buildRes = &BuildResult{
+				InstallType:    "cached-" + m.GetLanguage(),
+				ExecutablePath: binPath,
+				ExecutableName: binName,
+			}
+			_ = os.Chmod(binPath, 0755)
 		}
-		return err
+	}
+	if !cacheHit {
+		// Perform smart installation build/script execution
+		var err error
+		buildRes, err = BuildAndInstall(appDir, m, ins.cfg.BinDir)
+		if err != nil {
+			_ = os.RemoveAll(appDir) // Clean up target directory on build failure
+			// Restore binary backup if available
+			if _, statErr := os.Stat(bakPath); statErr == nil {
+				_ = copyFile(bakPath, binPath)
+			}
+			return err
+		}
+		// Populate cache best-effort
+		_ = cache.Store(cacheKey, binName, buildRes.ExecutablePath)
 	}
 
-	// Get Git commit
-	commit, _ := git.GetHeadCommit(appDir)
+	// Get Git commit (prefer cache commit, fallback to appDir)
+	commit := commitForCache
+	if commit == "" {
+		commit, _ = git.GetHeadCommit(appDir)
+	}
 
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
 	rec := db.PackageRecord{
@@ -405,11 +434,30 @@ func (ins *Installer) Sync(targetPkg string) error {
 				_ = copyFile(binPath, binPath+".bak")
 				_ = writeRollbackMeta(binPath, rec)
 			}
+			// Try binary cache before rebuilding.
+			cacheKey := cache.Key(rec.URI, newCommit, m.Package.Version, m.GetLanguage(), binName)
+			if cached, ok := cache.Lookup(cacheKey, binName); ok {
+				ui.LogInfo("Cache hit for %s [%s] — restoring %s", rec.Name, cacheKey[:7], cached)
+				if err := cache.Restore(cacheKey, binName, binPath); err == nil {
+					_ = os.Chmod(binPath, 0755)
+					rec.Version = m.Package.Version
+					rec.GitCommit = newCommit
+					rec.Executable = binName
+					rec.BinPath = binPath
+					rec.InstallType = "cached-" + m.GetLanguage()
+					rec.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
+					_ = ins.store.Set(rec)
+					ui.LogSuccess("Package '%s' updated to v%s! (from cache)", rec.Name, rec.Version)
+					return nil
+				}
+				ui.LogWarning("Cache restore failed for %s, rebuilding", rec.Name)
+			}
 			buildRes, err := BuildAndInstall(appDir, m, ins.cfg.BinDir)
 			if err != nil {
 				ui.LogError("Rebuild failed for '%s': %v.", rec.Name, err)
 				return nil
 			}
+			_ = cache.Store(cacheKey, binName, buildRes.ExecutablePath)
 			rec.Version = m.Package.Version
 			rec.GitCommit = newCommit
 			rec.Executable = buildRes.ExecutableName
@@ -473,11 +521,29 @@ func (ins *Installer) Sync(targetPkg string) error {
 					_ = copyFile(binPath, binPath+".bak")
 					_ = writeRollbackMeta(binPath, rec)
 				}
+				cacheKey := cache.Key(rec.URI, newCommit, m.Package.Version, m.GetLanguage(), binName)
+				if cached, ok := cache.Lookup(cacheKey, binName); ok {
+					ui.LogInfo("Cache hit for %s [%s] — restoring %s", rec.Name, cacheKey[:7], cached)
+					if err := cache.Restore(cacheKey, binName, binPath); err == nil {
+						_ = os.Chmod(binPath, 0755)
+						rec.Version = m.Package.Version
+						rec.GitCommit = newCommit
+						rec.Executable = binName
+						rec.BinPath = binPath
+						rec.InstallType = "cached-" + m.GetLanguage()
+						rec.UpdatedAt = time.Now().Format("2006-01-02 15:04:05")
+						_ = ins.store.Set(rec)
+						ui.LogSuccess("Package '%s' updated to v%s! (from cache)", rec.Name, rec.Version)
+						return
+					}
+					ui.LogWarning("Cache restore failed for %s, rebuilding", rec.Name)
+				}
 				buildRes, err := BuildAndInstall(appDir, m, ins.cfg.BinDir)
 				if err != nil {
 					ui.LogError("Rebuild failed for '%s': %v. Continuing sync...", rec.Name, err)
 					return
 				}
+				_ = cache.Store(cacheKey, binName, buildRes.ExecutablePath)
 				rec.Version = m.Package.Version
 				rec.GitCommit = newCommit
 				rec.Executable = buildRes.ExecutableName
