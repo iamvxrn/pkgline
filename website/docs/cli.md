@@ -11,6 +11,22 @@ URI formats: `gh:user/repo`, `gl:group/repo`, `cb:user/repo`, `sh:user/repo`, `u
 
 `--lang` / `--language` overrides inferred or manifest language (`go`, `rust`, `cbld`, `c`, `cpp`, `make`, `cmake`). `--exec` / `--executable` overrides the binary name. Both accept `--lang=go` form. Flags may appear before or after the URI.
 
+## `bootstrap`
+
+```bash
+pkgline bootstrap
+pkgline bootstrap --file ./Pkglinefile --dry-run
+```
+
+Installs all packages listed in `Pkglinefile` (walks up from `cwd`). `Pkglinefile` is a plain text file, one package spec per line (same URI forms as `install`, plus `--lang`/`--exec` per line). Lines starting with `#` and blank lines are ignored. Also supports `Pkglinefile.toml` with `packages = ["gh:a/b", "..."]` or `[[packages]]` tables.
+
+Example `Pkglinefile`:
+```
+gh:iamvxrn/cbld
+gh:golangci/golangci-lint@v1.64.8 --lang go
+./tools/my-local-tool --lang rust
+```
+
 ## `remove`
 
 ```bash

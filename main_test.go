@@ -21,6 +21,30 @@ func TestIsHelpArg(t *testing.T) {
 	}
 }
 
+func TestParseBootstrapArgs(t *testing.T) {
+	f, dry, err := parseBootstrapArgs([]string{"--file", "Pkglinefile", "--dry-run"})
+	if err != nil || f != "Pkglinefile" || !dry {
+		t.Fatalf("got f=%q dry=%v err=%v", f, dry, err)
+	}
+	f, dry, err = parseBootstrapArgs([]string{"--file=./Pkglinefile.toml"})
+	if err != nil || f != "./Pkglinefile.toml" || dry {
+		t.Fatalf("file=: %q %v %v", f, dry, err)
+	}
+	f, dry, err = parseBootstrapArgs(nil)
+	if err != nil || f != "" || dry {
+		t.Fatalf("empty: %q %v %v", f, dry, err)
+	}
+	if _, _, err := parseBootstrapArgs([]string{"--bogus"}); err == nil {
+		t.Fatal("want unknown flag")
+	}
+	if _, _, err := parseBootstrapArgs([]string{"--file"}); err == nil {
+		t.Fatal("want missing value")
+	}
+	if _, _, err := parseBootstrapArgs([]string{"extra"}); err == nil {
+		t.Fatal("want unexpected arg")
+	}
+}
+
 func TestParseInstallArgs(t *testing.T) {
 	uri, lang, execName, err := parseInstallArgs([]string{"--lang", "go", "--exec=mybin", "gh:user/repo"})
 	if err != nil || uri != "gh:user/repo" || lang != "go" || execName != "mybin" {
@@ -57,7 +81,7 @@ func TestStripJSONFlag(t *testing.T) {
 
 func TestPrintUsage(t *testing.T) {
 	out := captureStdout(t, printUsage)
-	for _, want := range []string{"install", "doctor", "--json", "--lang", "--exec"} {
+	for _, want := range []string{"install", "bootstrap", "doctor", "--json", "--lang", "--exec"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("usage missing %q:\n%s", want, out)
 		}
