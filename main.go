@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"pkgline/internal/config"
@@ -13,6 +14,7 @@ import (
 	"pkgline/internal/manifest"
 	"pkgline/internal/path"
 	"pkgline/internal/pkglinefile"
+	"pkgline/internal/search"
 	"pkgline/internal/ui"
 )
 
@@ -33,6 +35,8 @@ Commands:
                       Flags: --force  --yes
   bootstrap           Install all packages from Pkglinefile
                       Flags: --file <path>  --dry-run
+  search <query>      Search GitHub for repos containing pkgline.toml
+                      Flags: --limit <n> (default 10)
   remove, rm <name>   Remove an installed package and its linked binary
   rollback <name>     Restore previous backup executable (.bak) for package
   sync, update [name] Pull latest changes and rebuild package(s) if updated
@@ -43,7 +47,7 @@ Commands:
   help                Show this help message
 
 Global flags:
-  --json              Machine-readable output (list, doctor, version)
+  --json              Machine-readable output (list, doctor, version, search)
 `
 
 	fmt.Print(banner)
@@ -281,6 +285,44 @@ func parseBootstrapArgs(args []string) (filePath string, dryRun bool, err error)
 	return filePath, dryRun, nil
 }
 
+func parseSearchArgs(args []string) (query string, limit int, err error) {
+	limit = 10
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--limit" || a == "-n":
+			if i+1 >= len(args) {
+				return "", 0, fmt.Errorf("missing value for %s", a)
+			}
+			i++
+			v, err := strconv.Atoi(args[i])
+			if err != nil || v <= 0 {
+				return "", 0, fmt.Errorf("invalid limit %q", args[i])
+			}
+			limit = v
+		case strings.HasPrefix(a, "--limit="):
+			vStr := strings.TrimPrefix(a, "--limit=")
+			v, err := strconv.Atoi(vStr)
+			if err != nil || v <= 0 {
+				return "", 0, fmt.Errorf("invalid limit %q", vStr)
+			}
+			limit = v
+		case a == "--help" || a == "-h":
+			return "", 0, fmt.Errorf("help")
+		case strings.HasPrefix(a, "-") && a != "-":
+			return "", 0, fmt.Errorf("unknown flag %s", a)
+		default:
+			positional = append(positional, a)
+		}
+	}
+	if len(positional) == 0 {
+		return "", 0, fmt.Errorf("missing search query")
+	}
+	query = strings.Join(positional, " ")
+	return query, limit, nil
+}
+
 func parseRunArgs(args []string) (uri, lang, execName string, binArgs []string, err error) {
 	var positional []string
 	binArgs = []string{}
@@ -504,6 +546,65 @@ func main() {
 		}
 		ui.LogSuccess("Bootstrap complete: %d package(s) from %s", len(pf.Entries), pfPath)
 
+	case "search":
+		if len(os.Args) >= 3 && isHelpArg(os.Args[2]) {
+			fmt.Println("Usage: pkgline search [--limit <n>] <query>")
+			fmt.Println("  Search GitHub for repos containing pkgline.toml.")
+			return
+		}
+		if len(os.Args) < 3 {
+			ui.LogError("Missing search query.")
+			fmt.Println("Usage: pkgline search [--limit <n>] <query>")
+			os.Exit(1)
+		}
+		query, limit, err := parseSearchArgs(os.Args[2:])
+		if err != nil {
+			if err.Error() == "help" {
+				fmt.Println("Usage: pkgline search [--limit <n>] <query>")
+				return
+			}
+			ui.LogError("%v", err)
+			fmt.Println("Usage: pkgline search [--limit <n>] <query>")
+			os.Exit(1)
+		}
+		results, err := search.SearchGitHub(search.SearchOptions{Query: query, Limit: limit})
+		if err != nil {
+			ui.LogError("%v", err)
+			os.Exit(1)
+		}
+		if len(results) == 0 {
+			ui.LogInfo("No results for %q", query)
+			if !jsonOut {
+				fmt.Println("Try a broader query or check GITHUB_TOKEN for higher rate limits.")
+			} else {
+				_ = json.NewEncoder(os.Stdout).Encode([]search.Result{})
+			}
+			return
+		}
+		if jsonOut {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(results)
+			return
+		}
+		ui.LogSuccess("Found %d result(s) for %q:", len(results), query)
+		for _, r := range results {
+			stars := ""
+			if r.Stars > 0 {
+				stars = fmt.Sprintf(" ★ %d", r.Stars)
+			}
+			desc := ""
+			if r.Description != "" {
+				desc = " — " + r.Description
+				if len(desc) > 80 {
+					desc = desc[:77] + "..."
+				}
+			}
+			fmt.Printf("  %-30s%s%s\n", r.Repo, stars, desc)
+			fmt.Printf("    %s\n", r.URL)
+			fmt.Printf("    install: pkgline install gh:%s\n", r.Repo)
+		}
+
 	case "remove", "rm", "uninstall":
 		if len(os.Args) >= 3 && isHelpArg(os.Args[2]) {
 			printUsage()
@@ -652,7 +753,7 @@ func printCompletion(shell string) {
 		fmt.Print(`# pkgline bash completion
 _pkgline_completions() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
-    local cmds="install run publish bootstrap remove rollback sync list doctor version help completion"
+    local cmds="install run publish bootstrap search remove rollback sync list doctor version help completion"
     if [ $COMP_CWORD -eq 1 ]; then
         COMPREPLY=( $(compgen -W "${cmds}" -- ${cur}) )
     fi
@@ -668,6 +769,7 @@ _pkgline() {
         'run:Build and run without installing'
         'publish:Generate pkgline.toml for current directory'
         'bootstrap:Install all packages from Pkglinefile'
+        'search:Search GitHub for repos with pkgline.toml'
         'remove:Remove installed package'
         'rollback:Restore previous backup executable'
         'sync:Pull latest changes and rebuild package'
@@ -683,7 +785,7 @@ _pkgline "$@"
 	case "fish":
 		fmt.Print(`# pkgline fish completion
 complete -c pkgline -f
-complete -c pkgline -n "not __fish_seen_subcommand_from install run publish bootstrap remove rollback sync list doctor version completion" -a "install run publish bootstrap remove rollback sync list doctor version completion"
+complete -c pkgline -n "not __fish_seen_subcommand_from install run publish bootstrap search remove rollback sync list doctor version completion" -a "install run publish bootstrap search remove rollback sync list doctor version completion"
 `)
 	default:
 		ui.LogError("Unsupported shell '%s'. Supported shells: bash, zsh, fish", shell)
