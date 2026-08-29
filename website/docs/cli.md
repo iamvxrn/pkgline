@@ -47,6 +47,12 @@ Restores the previous binary from `.bak` if one exists.
 pkgline sync [package-name]
 ```
 
+Rebuilds only when `git pull` moved, version changed, or commit differs. Identical `OS+arch+commit+version+lang` builds hit the global cache at `~/.pkgline/cache/prebuilt` and skip recompilation.
+
+## `cache`
+
+Binary cache lives at `~/.pkgline/cache/prebuilt/<hash>/<bin>` where `<hash>` is `sha256(uri|commit|version|lang|exec|GOOS|GOARCH|goVersion)[:16]`. Populated after each successful build, consulted on `install` and `sync`. Best-effort — cache failures never fail an install.
+
 ## `list`
 
 ```bash

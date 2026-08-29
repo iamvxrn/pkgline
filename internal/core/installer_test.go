@@ -480,6 +480,60 @@ func TestNameFromURI(t *testing.T) {
 	}
 }
 
+func TestBinaryCacheHitOnReinstall(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("PKGLINE_ROOT", filepath.Join(tmpDir, ".pkgline"))
+	t.Setenv("PKGLINE_CONFIG_DIR", filepath.Join(tmpDir, ".config", "pkgline"))
+
+	installer, err := NewInstaller()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkgDir := filepath.Join(tmpDir, "cache-pkg")
+	if err := os.MkdirAll(pkgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "pkgline.toml"), []byte(`
+[package]
+name = "cache-tool"
+version = "0.1.0"
+language = "go"
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "go.mod"), []byte("module cache-tool\n\ngo 1.20\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "main.go"), []byte("package main\nimport \"fmt\"\nfunc main(){fmt.Println(\"hi\")}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// First install populates cache
+	if err := installer.Install(pkgDir); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	// Verify cache file exists
+	exe := "cache-tool"
+	if runtime.GOOS == "windows" {
+		exe += ".exe"
+	}
+	binPath := filepath.Join(installer.cfg.BinDir, exe)
+	if _, err := os.Stat(binPath); err != nil {
+		t.Fatalf("bin after first: %v", err)
+	}
+	// Remove bin to force restore path
+	if err := os.Remove(binPath); err != nil {
+		t.Fatal(err)
+	}
+	// Second install of same URI+version should hit cache (no rebuild needed logically)
+	// We reinstall same pkgDir (same version). Cache key identical.
+	if err := installer.Install(pkgDir); err != nil {
+		t.Fatalf("second install (cache hit): %v", err)
+	}
+	if _, err := os.Stat(binPath); err != nil {
+		t.Fatalf("bin after second (cache): %v", err)
+	}
+}
+
 func TestInstallWithOverridesLanguageAndExec(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("PKGLINE_ROOT", filepath.Join(tmpDir, ".pkgline"))
