@@ -14,7 +14,7 @@ import (
 // Inputs: original URI, git commit (or file hash for local), version, language, executable name, OS/arch.
 func Key(uri, commit, version, lang, execName string) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s|%s", uri, commit, version, lang, execName, runtime.GOOS, runtime.GOARCH, goVersion())
+	_, _ = fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s|%s", uri, commit, version, lang, execName, runtime.GOOS, runtime.GOARCH, goVersion())
 	sum := fmt.Sprintf("%x", h.Sum(nil))
 	return sum[:16]
 }
