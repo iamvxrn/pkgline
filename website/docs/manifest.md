@@ -20,7 +20,7 @@ uninstall = "uninstall.sh"
 
 - `name` — package name (required)
 - `version` — package version string
-- `language` — `go`, `rust`, `cbld`, `c`, `cpp`, `make`, or `cmake`. If omitted and there is no install script, Pkgline infers from `go.mod` / `Cargo.toml` / `cbld.toml` / `CMakeLists.txt` / `Makefile`. Override at install time with `--lang`.
+- `language` — `go`, `rust`, `zig`, `node` (`js`/`ts`), `cbld`, `c`, `cpp`, `make`, or `cmake`. If omitted and there is no install script, Pkgline infers from `go.mod` / `Cargo.toml` / `build.zig` / `package.json` / `cbld.toml` / `CMakeLists.txt` / `Makefile`. Override at install time with `--lang`.
 - `executable` — binary name (defaults to `name`). Override at install time with `--exec`.
 
 ## `[scripts]`

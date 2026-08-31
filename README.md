@@ -13,9 +13,10 @@ A tool for downloading and building executables from Git repositories into the u
 
 - Installs binaries to `~/.pkgline/bin` (add it to your `PATH`).
 - Resolves GitHub / GitLab / Codeberg / Sourcehut shorthand (`gh:`, `gl:`, `cb:`, `sh:`) and full Git URLs.
-- Native builds for Go, Rust, cbld/C/C++, Make, and CMake; custom `install.sh` scripts as fallback.
+- Native builds for Go, Rust, Zig, Node, cbld/C/C++, Make, and CMake; custom `install.sh` scripts as fallback.
 - Backup binaries (`.bak`) with `rollback` after updates.
 - Global binary cache at `~/.pkgline/cache/prebuilt/<hash>/<bin>` — identical OS+arch+commit builds are restored without recompiling.
+- `Pkglinefile` + `pkgline bootstrap` for reproducible toolchains, `pkgline search` for discoverability.
 
 ## Quick Start
 

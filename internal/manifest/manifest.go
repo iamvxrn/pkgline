@@ -56,7 +56,7 @@ func (m *Manifest) GetLanguage() string {
 func (m *Manifest) IsNative() bool {
 	lang := m.GetLanguage()
 	switch lang {
-	case "go", "rust", "cbld", "c", "cpp", "make", "cmake":
+	case "go", "rust", "cbld", "c", "cpp", "make", "cmake", "zig", "node", "nodejs", "js", "ts":
 		return true
 	default:
 		return false
@@ -74,11 +74,11 @@ func (m *Manifest) Validate() error {
 	hasInstallScript := strings.TrimSpace(m.Scripts.Install) != ""
 
 	if lang != "" && !hasNative {
-		return fmt.Errorf("pkgline.toml: unsupported language '%s' (supported: go, rust, cbld, c, cpp, make, cmake)", m.Package.Language)
+		return fmt.Errorf("pkgline.toml: unsupported language '%s' (supported: go, rust, cbld, c, cpp, make, cmake, zig, node)", m.Package.Language)
 	}
 
 	if !hasNative && !hasInstallScript {
-		return fmt.Errorf("pkgline.toml: package '%s' provides neither a supported language ('go', 'rust', 'cbld', 'c', 'cpp', 'make', 'cmake') nor an install script", m.Package.Name)
+		return fmt.Errorf("pkgline.toml: package '%s' provides neither a supported language ('go', 'rust', 'cbld', 'c', 'cpp', 'make', 'cmake', 'zig', 'node') nor an install script", m.Package.Name)
 	}
 
 	if m.GetExecutable() == "" {
@@ -153,6 +153,10 @@ func inferLanguage(dir string) string {
 		return "rust"
 	case fileExists(filepath.Join(dir, "cbld.toml")):
 		return "cbld"
+	case fileExists(filepath.Join(dir, "build.zig")):
+		return "zig"
+	case fileExists(filepath.Join(dir, "package.json")):
+		return "node"
 	case fileExists(filepath.Join(dir, "CMakeLists.txt")):
 		return "cmake"
 	case fileExists(filepath.Join(dir, "Makefile")) || fileExists(filepath.Join(dir, "makefile")):

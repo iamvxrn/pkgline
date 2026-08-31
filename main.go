@@ -18,7 +18,7 @@ import (
 	"pkgline/internal/ui"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 func printUsage() {
 	banner := `Pkgline - Decentralized, User-Space Package Manager
@@ -93,6 +93,10 @@ func runPublish(force, yes bool) error {
 		defLang = "rust"
 	} else if _, err := os.Stat(filepath.Join(cwd, "cbld.toml")); err == nil {
 		defLang = "cbld"
+	} else if _, err := os.Stat(filepath.Join(cwd, "build.zig")); err == nil {
+		defLang = "zig"
+	} else if _, err := os.Stat(filepath.Join(cwd, "package.json")); err == nil {
+		defLang = "node"
 	} else if _, err := os.Stat(filepath.Join(cwd, "CMakeLists.txt")); err == nil {
 		defLang = "cmake"
 	} else if _, err := os.Stat(filepath.Join(cwd, "Makefile")); err == nil {
@@ -123,7 +127,7 @@ func runPublish(force, yes bool) error {
 	fmt.Println("Generating pkgline.toml — press Enter to accept defaults.")
 	name := prompt("Package name", defName)
 	version := prompt("Version", defVersion)
-	lang := prompt("Language (go, rust, cbld, c, cpp, make, cmake, or empty for script)", defLang)
+	lang := prompt("Language (go, rust, cbld, c, cpp, make, cmake, zig, node, or empty for script)", defLang)
 	execName := prompt("Executable name", defExec)
 
 	// Basic validation.
@@ -132,7 +136,7 @@ func runPublish(force, yes bool) error {
 	}
 	if strings.TrimSpace(lang) != "" {
 		switch strings.ToLower(strings.TrimSpace(lang)) {
-		case "go", "rust", "cbld", "c", "cpp", "make", "cmake":
+		case "go", "rust", "cbld", "c", "cpp", "make", "cmake", "zig", "node", "nodejs", "js", "ts":
 		default:
 			return fmt.Errorf("unsupported language %q", lang)
 		}

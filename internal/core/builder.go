@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -86,6 +87,28 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest, binDir string) (*Buil
 		}
 		return &BuildResult{
 			InstallType:    "native-cmake",
+			ExecutablePath: targetBinPath,
+			ExecutableName: execName,
+		}, nil
+
+	case "zig":
+		ui.LogInfo("Building Zig package '%s'...", m.Package.Name)
+		if err := buildZigPackage(appRoot, execName, targetBinPath); err != nil {
+			return nil, fmt.Errorf("zig build failed: %w", err)
+		}
+		return &BuildResult{
+			InstallType:    "native-zig",
+			ExecutablePath: targetBinPath,
+			ExecutableName: execName,
+		}, nil
+
+	case "node", "nodejs", "js", "ts":
+		ui.LogInfo("Building Node package '%s'...", m.Package.Name)
+		if err := buildNodePackage(appRoot, execName, targetBinPath); err != nil {
+			return nil, fmt.Errorf("node build failed: %w", err)
+		}
+		return &BuildResult{
+			InstallType:    "native-node",
 			ExecutablePath: targetBinPath,
 			ExecutableName: execName,
 		}, nil
@@ -244,6 +267,121 @@ func buildCMakePackage(appRoot, execName, targetBinPath string) error {
 		return nil
 	}
 	return copyBuiltBinary(appRoot, execName, targetBinPath)
+}
+
+func buildZigPackage(appRoot, execName, targetBinPath string) error {
+	cmd := exec.Command("zig", "build")
+	cmd.Dir = appRoot
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s (%w)", strings.TrimSpace(stderr.String()), err)
+	}
+	candidates := []string{
+		filepath.Join(appRoot, "zig-out", "bin", execName),
+		filepath.Join(appRoot, "zig-out", "bin", execName+".exe"),
+		filepath.Join(appRoot, execName),
+	}
+	for _, p := range candidates {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			data, err := os.ReadFile(p)
+			if err != nil {
+				return fmt.Errorf("failed to read zig binary: %w", err)
+			}
+			return os.WriteFile(targetBinPath, data, 0755)
+		}
+	}
+	return fmt.Errorf("zig build succeeded but binary '%s' not found under zig-out/bin", execName)
+}
+
+func buildNodePackage(appRoot, execName, targetBinPath string) error {
+	pkgJSONPath := filepath.Join(appRoot, "package.json")
+	data, err := os.ReadFile(pkgJSONPath)
+	if err != nil {
+		return fmt.Errorf("package.json not found: %w", err)
+	}
+	var pkg struct {
+		Bin     interface{}       `json:"bin"`
+		Scripts map[string]string `json:"scripts"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return fmt.Errorf("failed to parse package.json: %w", err)
+	}
+
+	// Install deps: prefer npm ci if lock exists, else npm install
+	installCmd := "install"
+	if _, err := os.Stat(filepath.Join(appRoot, "package-lock.json")); err == nil {
+		installCmd = "ci"
+	}
+	cmd := exec.Command("npm", installCmd)
+	cmd.Dir = appRoot
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("npm %s: %s (%w)", installCmd, strings.TrimSpace(stderr.String()), err)
+	}
+
+	// If there's a build script, run it best-effort
+	if _, ok := pkg.Scripts["build"]; ok {
+		bcmd := exec.Command("npm", "run", "build")
+		bcmd.Dir = appRoot
+		stdout.Reset()
+		stderr.Reset()
+		bcmd.Stdout = &stdout
+		bcmd.Stderr = &stderr
+		_ = bcmd.Run()
+	}
+
+	// Resolve bin path from package.json
+	var binRel string
+	switch v := pkg.Bin.(type) {
+	case string:
+		binRel = v
+	case map[string]interface{}:
+		if s, ok := v[execName].(string); ok {
+			binRel = s
+		} else {
+			// pick first bin entry
+			for _, val := range v {
+				if s, ok := val.(string); ok {
+					binRel = s
+					break
+				}
+			}
+		}
+	}
+	candidates := []string{}
+	if binRel != "" {
+		candidates = append(candidates, filepath.Join(appRoot, binRel))
+	}
+	candidates = append(candidates,
+		filepath.Join(appRoot, "dist", "index.js"),
+		filepath.Join(appRoot, "dist", execName+".js"),
+		filepath.Join(appRoot, "bin", execName+".js"),
+		filepath.Join(appRoot, execName+".js"),
+		filepath.Join(appRoot, "index.js"),
+		filepath.Join(appRoot, binRel),
+	)
+	for _, p := range candidates {
+		if p == "" {
+			continue
+		}
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			// For JS, ensure shebang or wrap; just copy and chmod
+			binData, err := os.ReadFile(p)
+			if err != nil {
+				return fmt.Errorf("failed to read node bin: %w", err)
+			}
+			// If file lacks shebang, prepend node shebang
+			if !strings.HasPrefix(string(binData), "#!") {
+				binData = append([]byte("#!/usr/bin/env node\n"), binData...)
+			}
+			return os.WriteFile(targetBinPath, binData, 0755)
+		}
+	}
+	return fmt.Errorf("node build: bin '%s' not found (checked package.json bin, dist/, bin/)", execName)
 }
 
 func copyBuiltBinary(searchRoot, execName, targetBinPath string) error {

@@ -2,11 +2,19 @@
 
 ## [Unreleased]
 
-Honor `bin_dir` / `apps_dir` from config.toml. `sync` backs up the binary, skips git pull for local installs, and does not rebuild when `rev-parse` fails.
+## [0.4.0] - 2026-08-30
 
-`install`/`remove`/`rollback --help` is help, not a URI. Infer language from `go.mod` / `Cargo.toml` / `cbld.toml` / CMake / Make / `install.sh`. `install --lang` / `--exec` override that. Clone with submodules. Pin `@tag`/`@branch`/`@sha`. Go `./cmd/<name>` or `package.main_path`. Windows `install.ps1` and script runner. Cross-process inventory lock. Rollback restores inventory metadata. SIGINT removes the staging dir.
+The `Pkglinefile` + `binary cache` + `search` release — pkgline as `brew for sources`.
 
-CI, lint, and tests: gofmt, golangci-lint, govulncheck, and unit coverage for config, db, git, path, ui, and the CLI helpers.
+- **Pkglinefile** — declarative toolchain: `Pkglinefile` / `Pkglinefile.toml` (`--lang`/`--exec` per line, `//` comments, `ResolvedURI` for `./` paths), `pkgline bootstrap [--file <path>] [--dry-run]` walks up and installs sequentially (`internal/pkglinefile`)
+- **Binary cache** — global `~/.pkgline/cache/prebuilt/<hash>/<bin>` with key `sha256(uri|commit|version|lang|exec|GOOS|GOARCH|goVersion)[:16]`; hit on `install` and `sync` (single + 4-worker parallel), best-effort store/restore (`internal/cache`)
+- **Search** — `pkgline search <query> [--limit N] [--json]` via GitHub code search `pkgline.toml in:path <query>` with `GITHUB_TOKEN`/`GH_TOKEN`, deduped repos, stars/description (`internal/search`)
+- **Zig / Node** — native builders: `build.zig` → `zig build` → `zig-out/bin/<exec>`, `package.json` → `npm ci`/`install` + `npm run build` → `bin` field or `dist/` fallback; inferred from `build.zig`/`package.json`, validated as `zig`/`node` (`builder.go`, `manifest.go`)
+- **Run without install** — `pkgline run` / `r <uri> [-- --]` clones to temp, `BuildAndInstall` to temp bin, exec with forwarded args, no inventory
+- **Publish** — `pkgline publish [--force] [--yes]` interactive `pkgline.toml` generator inferring from `go.mod`/`Cargo.toml`/`cbld.toml`/`CMake`/`Makefile`
+- **Parallel sync** — 4-worker goroutine pool for `sync` of N packages
+- **Core fixes since 0.3.0** — honor `bin_dir`/`apps_dir` from `config.toml`, `sync` backs up binary and skips git pull for local installs, `install`/`remove`/`rollback --help` handling, language inference, `--lang`/`--exec` overrides, submodules, `@tag` pinning, `main_path`, Windows `install.ps1`, inventory lock, rollback metadata, SIGINT cleanup
+- CI, lint, tests: `gofmt`, `golangci-lint` (`errcheck`, `staticcheck`), `govulncheck`, coverage for `cache`, `pkglinefile`, `search`, `config`, `db`, `git`, `path`, `ui`
 
 ## [0.3.0] - 2026-08-26
 
