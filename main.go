@@ -524,7 +524,7 @@ func main() {
 				if e.Exec != "" {
 					extra += " --exec " + e.Exec
 				}
-				fmt.Printf("  would install: %s%s\n", e.URI, extra)
+				ui.LogPackage(e.URI, "would install%s", extra)
 			}
 			return
 		}
@@ -591,22 +591,19 @@ func main() {
 			_ = enc.Encode(results)
 			return
 		}
-		ui.LogSuccess("Found %d result(s) for %q:", len(results), query)
+		ui.LogSearch("Found %d result(s) for %q:", len(results), query)
 		for _, r := range results {
 			stars := ""
 			if r.Stars > 0 {
 				stars = fmt.Sprintf(" ★ %d", r.Stars)
 			}
-			desc := ""
-			if r.Description != "" {
-				desc = " — " + r.Description
-				if len(desc) > 80 {
-					desc = desc[:77] + "..."
-				}
+			desc := r.Description
+			if len(desc) > 80 {
+				desc = desc[:77] + "..."
 			}
-			fmt.Printf("  %-30s%s%s\n", r.Repo, stars, desc)
-			fmt.Printf("    %s\n", r.URL)
-			fmt.Printf("    install: pkgline install gh:%s\n", r.Repo)
+			repoDisp := ui.HighlightMatch(r.Repo, query)
+			descDisp := ui.HighlightMatch(desc, query)
+			ui.PrintSearchResult(repoDisp, stars, descDisp, r.URL, fmt.Sprintf("pkgline install gh:%s", r.Repo))
 		}
 
 	case "remove", "rm", "uninstall":
@@ -736,18 +733,18 @@ func runDoctor(jsonOut bool) {
 	}
 
 	ui.LogInfo("Running Pkgline system diagnostics...")
-	fmt.Printf("  • Pkgline Version: v%s\n", version)
-	fmt.Printf("  • Pkgline Root:    %s\n", path.PkglineRoot())
-	fmt.Printf("  • Bin Dir:      %s\n", binDir)
-	fmt.Printf("  • Apps Dir:     %s\n", appsDir)
-	fmt.Printf("  • Config File:  %s\n", path.ConfigPath())
+	fmt.Printf("  %s %s\n", ui.HighlightMatch("• Pkgline Version:", "Version"), version)
+	fmt.Printf("  %s %s\n", ui.HighlightMatch("• Pkgline Root:", "Root"), path.PkglineRoot())
+	fmt.Printf("  %s %s\n", ui.HighlightMatch("• Bin Dir:", "Bin"), binDir)
+	fmt.Printf("  %s %s\n", ui.HighlightMatch("• Apps Dir:", "Apps"), appsDir)
+	fmt.Printf("  %s %s\n", ui.HighlightMatch("• Config File:", "Config"), path.ConfigPath())
 
 	if inPath {
 		ui.LogSuccess("PATH configuration is correct (%s is in PATH).", binDir)
 	} else {
 		ui.LogWarning("PATH configuration missing. '%s' is NOT in $PATH.", binDir)
-		fmt.Printf("    To fix, add this line to your ~/.bashrc or ~/.zshrc:\n")
-		fmt.Printf("    export PATH=\"%s:$PATH\"\n", binDir)
+		fmt.Printf("    %s\n", "To fix, add this line to your ~/.bashrc or ~/.zshrc:")
+		fmt.Printf("    %s\n", fmt.Sprintf("export PATH=\"%s:$PATH\"", binDir))
 	}
 }
 

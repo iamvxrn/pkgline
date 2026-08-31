@@ -147,7 +147,7 @@ func TestRunDoctorText(t *testing.T) {
 	t.Setenv("PKGLINE_BIN", filepath.Join(root, "bin"))
 	t.Setenv("PATH", "/usr/bin")
 	out := captureStdout(t, func() { runDoctor(false) })
-	if !strings.Contains(out, "Pkgline Version") || !strings.Contains(out, "NOT in $PATH") {
+	if !strings.Contains(out, "Pkgline") || !strings.Contains(out, "Version") || !strings.Contains(out, "NOT in $PATH") {
 		t.Fatalf("doctor text: %q", out)
 	}
 }

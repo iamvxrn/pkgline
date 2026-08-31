@@ -29,7 +29,7 @@ func TestLogWriters(t *testing.T) {
 		LogSuccess("ok")
 		LogWarning("careful")
 	})
-	if !strings.Contains(out, "hello info") || !strings.Contains(out, "[ok]") || !strings.Contains(out, "[warn]") {
+	if !strings.Contains(out, "hello info") || !strings.Contains(out, "✔") || !strings.Contains(out, "⚠") {
 		t.Fatalf("stdout logs: %q", out)
 	}
 
