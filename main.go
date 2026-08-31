@@ -34,7 +34,7 @@ Commands:
   publish             Generate pkgline.toml interactively for current directory
                       Flags: --force  --yes
   bootstrap           Install all packages from Pkglinefile
-                      Flags: --file <path>  --dry-run
+                      Flags: --file <path>  --dry-run  --yes
   search <query>      Search GitHub for repos containing pkgline.toml
                       Flags: --limit <n> (default 10)
   remove, rm <name>   Remove an installed package and its linked binary
@@ -266,13 +266,13 @@ func parseInstallArgs(args []string) (uri, lang, execName string, err error) {
 	return positional[0], lang, execName, nil
 }
 
-func parseBootstrapArgs(args []string) (filePath string, dryRun bool, err error) {
+func parseBootstrapArgs(args []string) (filePath string, dryRun bool, yes bool, err error) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "--file" || a == "-f":
 			if i+1 >= len(args) {
-				return "", false, fmt.Errorf("missing value for %s", a)
+				return "", false, false, fmt.Errorf("missing value for %s", a)
 			}
 			i++
 			filePath = args[i]
@@ -280,13 +280,27 @@ func parseBootstrapArgs(args []string) (filePath string, dryRun bool, err error)
 			filePath = strings.TrimPrefix(a, "--file=")
 		case a == "--dry-run" || a == "-n":
 			dryRun = true
+		case a == "--yes" || a == "-y":
+			yes = true
 		case strings.HasPrefix(a, "-") && a != "-":
-			return "", false, fmt.Errorf("unknown flag %s", a)
+			return "", false, false, fmt.Errorf("unknown flag %s", a)
 		default:
-			return "", false, fmt.Errorf("unexpected argument %q", a)
+			return "", false, false, fmt.Errorf("unexpected argument %q", a)
 		}
 	}
-	return filePath, dryRun, nil
+	return filePath, dryRun, yes, nil
+}
+
+func confirm(prompt string) bool {
+	// No prompt in non-interactive (CI, piped) — default to yes if yes flag was used, else ask
+	fmt.Printf("%s [y/N]: ", prompt)
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	line = strings.TrimSpace(strings.ToLower(line))
+	return line == "y" || line == "yes"
 }
 
 func parseSearchArgs(args []string) (query string, limit int, err error) {
@@ -469,18 +483,18 @@ func main() {
 
 	case "bootstrap":
 		if len(os.Args) >= 3 && isHelpArg(os.Args[2]) {
-			fmt.Println("Usage: pkgline bootstrap [--file <path>] [--dry-run]")
+			fmt.Println("Usage: pkgline bootstrap [--file <path>] [--dry-run] [--yes]")
 			fmt.Println("  Install all packages from Pkglinefile (walks up from cwd).")
 			return
 		}
-		bFile, dryRun, err := parseBootstrapArgs(os.Args[2:])
+		bFile, dryRun, yes, err := parseBootstrapArgs(os.Args[2:])
 		if err != nil {
 			ui.LogError("%v", err)
-			fmt.Println("Usage: pkgline bootstrap [--file <path>] [--dry-run]")
+			fmt.Println("Usage: pkgline bootstrap [--file <path>] [--dry-run] [--yes]")
 			os.Exit(1)
 		}
 		if bFile != "" && isHelpArg(bFile) {
-			fmt.Println("Usage: pkgline bootstrap [--file <path>] [--dry-run]")
+			fmt.Println("Usage: pkgline bootstrap [--file <path>] [--dry-run] [--yes]")
 			return
 		}
 		var pfPath string
@@ -527,6 +541,12 @@ func main() {
 				ui.LogPackage(e.URI, "would install%s", extra)
 			}
 			return
+		}
+		if !yes {
+			if !confirm(fmt.Sprintf("Install %d package(s) from %s?", len(pf.Entries), pfPath)) {
+				ui.LogInfo("Aborted.")
+				return
+			}
 		}
 		installer, err := core.NewInstaller()
 		if err != nil {

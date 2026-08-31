@@ -22,25 +22,25 @@ func TestIsHelpArg(t *testing.T) {
 }
 
 func TestParseBootstrapArgs(t *testing.T) {
-	f, dry, err := parseBootstrapArgs([]string{"--file", "Pkglinefile", "--dry-run"})
-	if err != nil || f != "Pkglinefile" || !dry {
-		t.Fatalf("got f=%q dry=%v err=%v", f, dry, err)
+	f, dry, yes, err := parseBootstrapArgs([]string{"--file", "Pkglinefile", "--dry-run"})
+	if err != nil || f != "Pkglinefile" || !dry || yes {
+		t.Fatalf("got f=%q dry=%v yes=%v err=%v", f, dry, yes, err)
 	}
-	f, dry, err = parseBootstrapArgs([]string{"--file=./Pkglinefile.toml"})
-	if err != nil || f != "./Pkglinefile.toml" || dry {
-		t.Fatalf("file=: %q %v %v", f, dry, err)
+	f, dry, yes, err = parseBootstrapArgs([]string{"--file=./Pkglinefile.toml", "--yes"})
+	if err != nil || f != "./Pkglinefile.toml" || dry || !yes {
+		t.Fatalf("file=: %q dry=%v yes=%v err=%v", f, dry, yes, err)
 	}
-	f, dry, err = parseBootstrapArgs(nil)
-	if err != nil || f != "" || dry {
-		t.Fatalf("empty: %q %v %v", f, dry, err)
+	f, dry, yes, err = parseBootstrapArgs(nil)
+	if err != nil || f != "" || dry || yes {
+		t.Fatalf("empty: %q dry=%v yes=%v err=%v", f, dry, yes, err)
 	}
-	if _, _, err := parseBootstrapArgs([]string{"--bogus"}); err == nil {
+	if _, _, _, err := parseBootstrapArgs([]string{"--bogus"}); err == nil {
 		t.Fatal("want unknown flag")
 	}
-	if _, _, err := parseBootstrapArgs([]string{"--file"}); err == nil {
+	if _, _, _, err := parseBootstrapArgs([]string{"--file"}); err == nil {
 		t.Fatal("want missing value")
 	}
-	if _, _, err := parseBootstrapArgs([]string{"extra"}); err == nil {
+	if _, _, _, err := parseBootstrapArgs([]string{"extra"}); err == nil {
 		t.Fatal("want unexpected arg")
 	}
 }
