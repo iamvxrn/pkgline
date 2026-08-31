@@ -4,23 +4,61 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"pkgline/internal/path"
 )
 
 // Key returns a stable cache key for a built binary.
-// Inputs: original URI, git commit (or file hash for local), version, language, executable name, OS/arch.
+// Inputs: original URI, git commit (or file hash for local), version, language, executable name, OS/arch,
+// and the versions of the toolchains that build the selected language.
 func Key(uri, commit, version, lang, execName string) string {
 	h := sha256.New()
-	_, _ = fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s|%s", uri, commit, version, lang, execName, runtime.GOOS, runtime.GOARCH, goVersion())
+	_, _ = fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s|%s|%s", uri, commit, version, lang, execName, runtime.GOOS, runtime.GOARCH, goVersion(), toolchainVersion(lang))
 	sum := fmt.Sprintf("%x", h.Sum(nil))
 	return sum[:16]
 }
 
 func goVersion() string {
 	return runtime.Version()
+}
+
+var toolchainVersionCommand = func(tool string) ([]byte, error) {
+	return exec.Command(tool, "--version").Output()
+}
+
+func toolchainVersion(lang string) string {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	var tool string
+	switch lang {
+	case "rust":
+		tool = "rustc"
+	case "c", "cpp", "cbld":
+		if lang == "cpp" {
+			tool = os.Getenv("CXX")
+		} else {
+			tool = os.Getenv("CC")
+		}
+		if tool == "" {
+			if lang == "cpp" {
+				tool = "c++"
+			} else {
+				tool = "cc"
+			}
+		}
+	}
+	if tool == "" {
+		return ""
+	}
+
+	out, err := toolchainVersionCommand(tool)
+	if err != nil {
+		return tool + ":unavailable"
+	}
+	return tool + ":" + strings.TrimSpace(string(out))
 }
 
 // Dir returns ~/.pkgline/cache/prebuilt

@@ -22,6 +22,31 @@ func TestKeyStable(t *testing.T) {
 	}
 }
 
+func TestKeyIncludesRelevantToolchain(t *testing.T) {
+	original := toolchainVersionCommand
+	t.Cleanup(func() { toolchainVersionCommand = original })
+	toolchain := "1.2.3"
+	toolchainVersionCommand = func(tool string) ([]byte, error) {
+		return []byte(tool + " " + toolchain), nil
+	}
+	t.Setenv("CC", "cc")
+	if got := toolchainVersion("rust"); got != "rustc:rustc 1.2.3" {
+		t.Fatalf("rust toolchain version = %q", got)
+	}
+	if got := toolchainVersion("c"); got != "cc:cc 1.2.3" {
+		t.Fatalf("C toolchain version = %q", got)
+	}
+	if got := toolchainVersion("go"); got != "" {
+		t.Fatalf("Go should use the existing runtime version field, got %q", got)
+	}
+
+	key := Key("u", "c", "v", "rust", "bin")
+	toolchain = "2.0.0"
+	if key == Key("u", "c", "v", "rust", "bin") {
+		t.Fatal("toolchain version should affect key")
+	}
+}
+
 func TestStoreLookupRestore(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("PKGLINE_ROOT", root)

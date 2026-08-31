@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-31
+
+- Binary cache keys now include Rust and C/C++ compiler versions.
+- GitHub search paginates to the requested limit; `run` reliably forwards arguments after `--`.
+
 ## [0.4.1] - 2026-08-30
 
 - Vibrant CLI: bright palette, emojis (▶ ✔ ⚠ ✘ 📦 🔍), `PrintTable` with cyan header, magenta Name, green Version, yellow Type, `PrintSearchResult` and `HighlightMatch`

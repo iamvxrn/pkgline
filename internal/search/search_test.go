@@ -95,6 +95,35 @@ func TestSearchGitHubDedup(t *testing.T) {
 	}
 }
 
+func TestSearchGitHubPaginatesUntilLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("per_page") != "3" {
+			t.Fatalf("per_page = %q", r.URL.Query().Get("per_page"))
+		}
+		page := r.URL.Query().Get("page")
+		if page == "1" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"total_count": 4, "items": []any{
+				map[string]any{"path": "pkgline.toml", "repository": map[string]string{"full_name": "user/one"}},
+				map[string]any{"path": "pkgline.toml", "repository": map[string]string{"full_name": "user/two"}},
+			}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"total_count": 4, "items": []any{
+			map[string]any{"path": "pkgline.toml", "repository": map[string]string{"full_name": "user/three"}},
+			map[string]any{"path": "pkgline.toml", "repository": map[string]string{"full_name": "user/four"}},
+		}})
+	}))
+	defer srv.Close()
+
+	results, err := SearchGitHub(SearchOptions{Query: "test", Limit: 3, BaseURL: srv.URL, Client: srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 3 || results[2].Repo != "user/three" {
+		t.Fatalf("results = %+v", results)
+	}
+}
+
 func TestSearchGitHubAuthError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(401)

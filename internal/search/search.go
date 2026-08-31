@@ -75,56 +75,82 @@ func SearchGitHub(opts SearchOptions) ([]Result, error) {
 	if base == "" {
 		base = "https://api.github.com"
 	}
-	u := fmt.Sprintf("%s/search/code?q=%s&per_page=%d", strings.TrimRight(base, "/"), url.QueryEscape(query), limit)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "pkgline/search")
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
 
 	client := opts.Client
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("github search: %w", err)
+	// Deduplicate repos
+	seen := make(map[string]bool)
+	var out []Result
+	for page := 1; len(out) < limit; page++ {
+		u := fmt.Sprintf("%s/search/code?q=%s&per_page=%d&page=%d", strings.TrimRight(base, "/"), url.QueryEscape(query), limit, page)
+		req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "pkgline/search")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("github search: %w", err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("read github response: %w", readErr)
+		}
+		if err := checkResponse(resp.StatusCode, body, token); err != nil {
+			return nil, err
+		}
+
+		var r githubCodeSearchResponse
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, fmt.Errorf("decode github response: %w", err)
+		}
+		for _, it := range r.Items {
+			repo := it.Repository.FullName
+			if repo == "" || seen[repo] {
+				continue
+			}
+			seen[repo] = true
+			out = append(out, Result{Repo: repo, URL: it.Repository.HTMLURL, Description: it.Repository.Description, Stars: it.Repository.StargazersCount, Path: it.Path})
+			if len(out) >= limit {
+				break
+			}
+		}
+		if len(r.Items) == 0 || page*limit >= r.TotalCount {
+			break
+		}
 	}
-	defer func() { _ = resp.Body.Close() }()
+	return out, nil
+}
 
-	body, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		// Parse message for hint
-		var e struct {
-			Message string `json:"message"`
+func checkResponse(status int, body []byte, token string) error {
+	var e struct {
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(body, &e)
+	if status == 401 || status == 403 {
+		if strings.Contains(strings.ToLower(e.Message), "rate limit") && token == "" {
+			return fmt.Errorf("GitHub API rate limited or requires auth: set GITHUB_TOKEN env and retry (%s)", e.Message)
 		}
-		_ = json.Unmarshal(body, &e)
-		if e.Message != "" && strings.Contains(strings.ToLower(e.Message), "rate limit") && token == "" {
-			return nil, fmt.Errorf("GitHub API rate limited or requires auth: set GITHUB_TOKEN env and retry (%s)", e.Message)
-		}
-		if resp.StatusCode == 401 && token == "" {
-			return nil, fmt.Errorf("GitHub code search requires authentication: set GITHUB_TOKEN (https://github.com/settings/tokens) and retry")
+		if status == 401 && token == "" {
+			return fmt.Errorf("GitHub code search requires authentication: set GITHUB_TOKEN (https://github.com/settings/tokens) and retry")
 		}
 		if e.Message != "" {
-			return nil, fmt.Errorf("github search %d: %s", resp.StatusCode, e.Message)
+			return fmt.Errorf("github search %d: %s", status, e.Message)
 		}
-		return nil, fmt.Errorf("github search %d", resp.StatusCode)
+		return fmt.Errorf("github search %d", status)
 	}
-	if resp.StatusCode != 200 {
-		var e struct {
-			Message string `json:"message"`
-		}
-		_ = json.Unmarshal(body, &e)
+	if status != http.StatusOK {
 		msg := e.Message
 		if msg == "" {
 			msg = string(body)
@@ -132,33 +158,7 @@ func SearchGitHub(opts SearchOptions) ([]Result, error) {
 				msg = msg[:200]
 			}
 		}
-		return nil, fmt.Errorf("github search %d: %s", resp.StatusCode, msg)
+		return fmt.Errorf("github search %d: %s", status, msg)
 	}
-
-	var r githubCodeSearchResponse
-	if err := json.Unmarshal(body, &r); err != nil {
-		return nil, fmt.Errorf("decode github response: %w", err)
-	}
-
-	// Deduplicate repos
-	seen := make(map[string]bool)
-	var out []Result
-	for _, it := range r.Items {
-		repo := it.Repository.FullName
-		if repo == "" || seen[repo] {
-			continue
-		}
-		seen[repo] = true
-		out = append(out, Result{
-			Repo:        repo,
-			URL:         it.Repository.HTMLURL,
-			Description: it.Repository.Description,
-			Stars:       it.Repository.StargazersCount,
-			Path:        it.Path,
-		})
-		if len(out) >= limit {
-			break
-		}
-	}
-	return out, nil
+	return nil
 }

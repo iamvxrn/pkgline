@@ -18,7 +18,7 @@ import (
 	"pkgline/internal/ui"
 )
 
-const version = "0.4.1"
+const version = "0.4.2"
 
 func printUsage() {
 	banner := `Pkgline - Decentralized, User-Space Package Manager
@@ -208,7 +208,11 @@ func isHelpArg(s string) bool {
 func stripJSONFlag(args []string) (bool, []string) {
 	jsonOut := false
 	out := make([]string, 0, len(args))
-	for _, a := range args {
+	for i, a := range args {
+		if a == "--" {
+			out = append(out, args[i:]...)
+			break
+		}
 		if a == "--json" {
 			jsonOut = true
 			continue

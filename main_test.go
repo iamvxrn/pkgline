@@ -101,6 +101,24 @@ func TestStripJSONFlag(t *testing.T) {
 	if off || strings.Join(rest, " ") != "pkgline version" {
 		t.Fatalf("got on=%v rest=%v", off, rest)
 	}
+	on, rest = stripJSONFlag([]string{"pkgline", "run", "gh:a/b", "--", "--json", "value"})
+	if on || strings.Join(rest, " ") != "pkgline run gh:a/b -- --json value" {
+		t.Fatalf("binary args were modified: on=%v rest=%v", on, rest)
+	}
+}
+
+func TestParseRunArgsForwardsArgumentsAfterSeparator(t *testing.T) {
+	uri, lang, execName, binArgs, err := parseRunArgs([]string{"--lang", "rust", "gh:user/repo", "--", "--name", "value", "-x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uri != "gh:user/repo" || lang != "rust" || execName != "" {
+		t.Fatalf("got uri=%q lang=%q exec=%q", uri, lang, execName)
+	}
+	want := []string{"--name", "value", "-x"}
+	if strings.Join(binArgs, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("bin args = %v, want %v", binArgs, want)
+	}
 }
 
 func TestPrintUsage(t *testing.T) {
