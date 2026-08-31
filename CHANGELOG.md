@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-30
+
+- Vibrant CLI: bright palette, emojis (▶ ✔ ⚠ ✘ 📦 🔍), `PrintTable` with cyan header, magenta Name, green Version, yellow Type, `PrintSearchResult` and `HighlightMatch`
+- `bootstrap [y/N]` confirm for safety: `Install N package(s) from Pkglinefile? [y/N]` with `--yes`/`-y` to skip, dry-run skips prompt
+- Lint: `errcheck` for `Fprintf`/`Close` in `cache`/`pkglinefile`/`search`, `gofmt` fixes, `TestLogWriters`/`TestRunDoctorText` for new emojis/colors
+
 ## [0.4.0] - 2026-08-30
 
 The `Pkglinefile` + `binary cache` + `search` release — pkgline as `brew for sources`.

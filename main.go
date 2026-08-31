@@ -18,7 +18,7 @@ import (
 	"pkgline/internal/ui"
 )
 
-const version = "0.4.0"
+const version = "0.4.1"
 
 func printUsage() {
 	banner := `Pkgline - Decentralized, User-Space Package Manager
