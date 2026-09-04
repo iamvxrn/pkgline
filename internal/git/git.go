@@ -30,7 +30,9 @@ func Clone(uri string, targetDir string, ref string) error {
 	if ref != "" && !looksLikeCommit(ref) {
 		args = append(args, "--branch", ref)
 	}
-	args = append(args, uri, targetDir)
+	// "--" stops git from reading a URI that begins with "-" as an option;
+	// --upload-pack=<cmd> would otherwise run <cmd>.
+	args = append(args, "--", uri, targetDir)
 	cmd := exec.Command("git", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

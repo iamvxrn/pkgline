@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Security
+
+- **Path traversal via `pkgline.toml` (critical).** `[package] name` and
+  `[package] executable` are read from the cloned repository and were joined
+  straight onto `~/.pkgline/apps` and `~/.pkgline/bin` with no validation. A
+  manifest with `name = "../.."` made `install` `RemoveAll` a directory outside
+  the apps dir; `executable = "../../.bashrc"` made the build write its output
+  anywhere on disk. Both are now rejected, as are escaping `[scripts]` paths and
+  traversing `--exec` overrides, `pkgline remove <name>`, and `pkgline rollback
+  <name>`.
+- `git clone` now passes `--` before the URI so a URI beginning with `-` cannot
+  be read by git as an option (`--upload-pack=<cmd>` runs `<cmd>`).
+
+### Fixed
+
+- `[scripts] install` alongside a native `language` is dead configuration — only
+  the native builder runs. Pkgline now warns instead of silently ignoring it.
+- `[scripts] uninstall` no longer runs for natively built packages. These hooks
+  are written to undo their own install script, and in practice delete a binary
+  from a hardcoded path such as `~/.local/bin` — a file pkgline never created.
+- Docs: `run` and `publish` were undocumented; `bootstrap --yes`, `zig`/`node`
+  in the `--lang` list, `[package] main_path`, and the script environment
+  variables were missing; the cache-key formula omitted the toolchain version.
+- `Pkglinefile` comments are `#`, not `//`; the 0.4.0 note said `//`, which
+  hard-errors the whole bootstrap.
+
 ## [0.4.2] - 2026-08-31
 
 - Binary cache keys now include Rust and C/C++ compiler versions.
@@ -17,7 +43,7 @@
 
 The `Pkglinefile` + `binary cache` + `search` release — pkgline as `brew for sources`.
 
-- **Pkglinefile** — declarative toolchain: `Pkglinefile` / `Pkglinefile.toml` (`--lang`/`--exec` per line, `//` comments, `ResolvedURI` for `./` paths), `pkgline bootstrap [--file <path>] [--dry-run]` walks up and installs sequentially (`internal/pkglinefile`)
+- **Pkglinefile** — declarative toolchain: `Pkglinefile` / `Pkglinefile.toml` (`--lang`/`--exec` per line, `#` comments, `ResolvedURI` for `./` paths), `pkgline bootstrap [--file <path>] [--dry-run]` walks up and installs sequentially (`internal/pkglinefile`)
 - **Binary cache** — global `~/.pkgline/cache/prebuilt/<hash>/<bin>` with key `sha256(uri|commit|version|lang|exec|GOOS|GOARCH|goVersion)[:16]`; hit on `install` and `sync` (single + 4-worker parallel), best-effort store/restore (`internal/cache`)
 - **Search** — `pkgline search <query> [--limit N] [--json]` via GitHub code search `pkgline.toml in:path <query>` with `GITHUB_TOKEN`/`GH_TOKEN`, deduped repos, stars/description (`internal/search`)
 - **Zig / Node** — native builders: `build.zig` → `zig build` → `zig-out/bin/<exec>`, `package.json` → `npm ci`/`install` + `npm run build` → `bin` field or `dist/` fallback; inferred from `build.zig`/`package.json`, validated as `zig`/`node` (`builder.go`, `manifest.go`)

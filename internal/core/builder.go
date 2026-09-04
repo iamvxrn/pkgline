@@ -28,6 +28,15 @@ func BuildAndInstall(appRoot string, m *manifest.Manifest, binDir string) (*Buil
 		return nil, fmt.Errorf("invalid package manifest: %w", err)
 	}
 
+	// A manifest that declares BOTH a natively-supported language and a
+	// [scripts] install hook only ever runs the native builder -- the script is
+	// reachable only from the default branch below. Say so, rather than letting
+	// the author believe their installer ran.
+	if m.IsNative() && strings.TrimSpace(m.Scripts.Install) != "" {
+		ui.LogWarning("Manifest for '%s' sets both language '%s' and [scripts] install = %q; the native builder is used and the install script is NOT run.",
+			m.Package.Name, m.GetLanguage(), strings.TrimSpace(m.Scripts.Install))
+	}
+
 	execName := m.GetExecutable()
 	if binDir == "" {
 		binDir = path.BinDir()

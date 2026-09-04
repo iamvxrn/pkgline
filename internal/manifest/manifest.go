@@ -63,10 +63,43 @@ func (m *Manifest) IsNative() bool {
 	}
 }
 
+// ValidatePathComponent rejects values that would escape the directory they are
+// joined into. Package names and executable names are taken verbatim from a
+// pkgline.toml inside an untrusted cloned repository and are joined onto the
+// apps/ and bin/ directories, so a value containing a path separator, a "..",
+// or an absolute path lets a hostile manifest read, overwrite, or delete files
+// anywhere on the user's machine.
+func ValidatePathComponent(kind, value string) error {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return fmt.Errorf("pkgline.toml: %s is required", kind)
+	}
+	if v == "." || v == ".." {
+		return fmt.Errorf("pkgline.toml: %s %q is not a valid name", kind, value)
+	}
+	if strings.ContainsRune(v, '/') || strings.ContainsRune(v, '\\') {
+		return fmt.Errorf("pkgline.toml: %s %q must not contain a path separator", kind, value)
+	}
+	if strings.ContainsRune(v, 0) {
+		return fmt.Errorf("pkgline.toml: %s %q must not contain a NUL byte", kind, value)
+	}
+	if filepath.IsAbs(v) || filepath.VolumeName(v) != "" {
+		return fmt.Errorf("pkgline.toml: %s %q must not be an absolute path", kind, value)
+	}
+	// Defence in depth: after cleaning, the value must still be exactly itself.
+	if filepath.Clean(v) != v {
+		return fmt.Errorf("pkgline.toml: %s %q is not a plain file name", kind, value)
+	}
+	return nil
+}
+
 // Validate ensures manifest contains valid metadata and install instructions.
 func (m *Manifest) Validate() error {
 	if strings.TrimSpace(m.Package.Name) == "" {
 		return errors.New("pkgline.toml: [package] name is required")
+	}
+	if err := ValidatePathComponent("[package] name", m.Package.Name); err != nil {
+		return err
 	}
 
 	lang := m.GetLanguage()
@@ -84,7 +117,38 @@ func (m *Manifest) Validate() error {
 	if m.GetExecutable() == "" {
 		return errors.New("pkgline.toml: package executable name could not be determined")
 	}
+	if err := ValidatePathComponent("[package] executable", m.GetExecutable()); err != nil {
+		return err
+	}
 
+	// Script hooks are resolved relative to the cloned app root; they must not
+	// escape it either.
+	for kind, script := range map[string]string{
+		"[scripts] install":   m.Scripts.Install,
+		"[scripts] uninstall": m.Scripts.Uninstall,
+	} {
+		if strings.TrimSpace(script) == "" {
+			continue
+		}
+		if err := validateScriptPath(kind, script); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateScriptPath allows a relative sub-path (e.g. "scripts/install.sh")
+// but refuses anything absolute or climbing out of the app root.
+func validateScriptPath(kind, script string) error {
+	v := strings.TrimSpace(script)
+	if filepath.IsAbs(v) || filepath.VolumeName(v) != "" {
+		return fmt.Errorf("pkgline.toml: %s %q must be relative to the package root", kind, script)
+	}
+	norm := filepath.ToSlash(filepath.Clean(v))
+	if norm == ".." || strings.HasPrefix(norm, "../") {
+		return fmt.Errorf("pkgline.toml: %s %q must not escape the package root", kind, script)
+	}
 	return nil
 }
 
