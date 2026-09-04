@@ -16,6 +16,7 @@ func TestValidateRejectsTraversalNames(t *testing.T) {
 		"a/b",
 		`a\b`,
 		"/etc/passwd",
+		`\etc\passwd`,
 		"..",
 		".",
 	}
@@ -35,8 +36,39 @@ func TestValidateRejectsTraversalNames(t *testing.T) {
 	}
 }
 
+// rawExecutableName is what Validate() actually checks, and it must never
+// depend on the host OS: GetExecutable()'s Windows ".exe" suffix turns ".."
+// into "...exe" -- a perfectly ordinary filename -- which is exactly how a
+// traversing executable slipped past validation, on Windows only, before
+// this existed. This test doesn't need to run on Windows to prove the fix:
+// it establishes that the value fed to ValidatePathComponent carries no
+// platform-specific transform at all.
+func TestRawExecutableNameCarriesNoPlatformSuffix(t *testing.T) {
+	for _, name := range []string{"..", ".", "victim", ""} {
+		m := &Manifest{Package: PackageConfig{Executable: name}}
+		if got := m.rawExecutableName(); got != name {
+			t.Fatalf("rawExecutableName(%q) = %q, want it unchanged", name, got)
+		}
+	}
+	// Falls back to the package name, same as GetExecutable, when Executable
+	// is unset -- and still without a suffix.
+	m := &Manifest{Package: PackageConfig{Name: ".."}}
+	if got := m.rawExecutableName(); got != ".." {
+		t.Fatalf("rawExecutableName() fallback = %q, want %q", got, "..")
+	}
+}
+
 func TestValidateRejectsEscapingScriptPaths(t *testing.T) {
-	for _, script := range []string{"../../evil.sh", "/tmp/evil.sh", ".."} {
+	// A rooted Windows-style backslash path, alongside the existing Unix ones.
+	// filepath.IsAbs and filepath.VolumeName only recognise a path as
+	// "absolute" when it carries a drive letter or UNC prefix -- so on a
+	// build actually running on Windows, filepath.IsAbs("/tmp/evil.sh")
+	// returns false too, and this whole check used to be a no-op for exactly
+	// the paths it exists to catch. Running on Linux, `	mp\evil.sh` proves
+	// the same gap without a Windows machine: a backslash is not a separator
+	// here either, so before the leading-separator check this case would have
+	// passed here as readily as "/tmp/evil.sh" passed on Windows.
+	for _, script := range []string{"../../evil.sh", "/tmp/evil.sh", `\tmp\evil.sh`, ".."} {
 		m := &Manifest{Package: PackageConfig{Name: "ok"}, Scripts: ScriptConfig{Install: script}}
 		if err := m.Validate(); err == nil {
 			t.Fatalf("Validate accepted escaping install script %q", script)
