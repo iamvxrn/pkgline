@@ -36,12 +36,26 @@ type Manifest struct {
 }
 
 // GetExecutable returns the configured executable name (with .exe on Windows) or defaults to package name.
-func (m *Manifest) GetExecutable() string {
+// rawExecutableName is what the manifest actually asked for: [package]
+// executable, or the package name when that is unset -- before any
+// platform-specific suffix. Validate() checks this value, not
+// GetExecutable()'s. Checking the suffixed one let a traversing name slip
+// past on Windows only: GetExecutable() appends ".exe" unless the name
+// already ends with it, and ".." + ".exe" is "...exe" -- an entirely
+// ordinary filename, not the special ".." path component ValidatePathComponent
+// is looking for. The check has to run before that transform exists, not
+// hope every future suffix keeps neutralising the traversal by accident.
+func (m *Manifest) rawExecutableName() string {
 	execName := strings.TrimSpace(m.Package.Executable)
 	if execName == "" {
 		execName = strings.TrimSpace(m.Package.Name)
 	}
-	if runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(execName), ".exe") {
+	return execName
+}
+
+func (m *Manifest) GetExecutable() string {
+	execName := m.rawExecutableName()
+	if execName != "" && runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(execName), ".exe") {
 		execName += ".exe"
 	}
 	return execName
@@ -63,10 +77,43 @@ func (m *Manifest) IsNative() bool {
 	}
 }
 
+// ValidatePathComponent rejects values that would escape the directory they are
+// joined into. Package names and executable names are taken verbatim from a
+// pkgline.toml inside an untrusted cloned repository and are joined onto the
+// apps/ and bin/ directories, so a value containing a path separator, a "..",
+// or an absolute path lets a hostile manifest read, overwrite, or delete files
+// anywhere on the user's machine.
+func ValidatePathComponent(kind, value string) error {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return fmt.Errorf("pkgline.toml: %s is required", kind)
+	}
+	if v == "." || v == ".." {
+		return fmt.Errorf("pkgline.toml: %s %q is not a valid name", kind, value)
+	}
+	if strings.ContainsRune(v, '/') || strings.ContainsRune(v, '\\') {
+		return fmt.Errorf("pkgline.toml: %s %q must not contain a path separator", kind, value)
+	}
+	if strings.ContainsRune(v, 0) {
+		return fmt.Errorf("pkgline.toml: %s %q must not contain a NUL byte", kind, value)
+	}
+	if filepath.IsAbs(v) || filepath.VolumeName(v) != "" {
+		return fmt.Errorf("pkgline.toml: %s %q must not be an absolute path", kind, value)
+	}
+	// Defence in depth: after cleaning, the value must still be exactly itself.
+	if filepath.Clean(v) != v {
+		return fmt.Errorf("pkgline.toml: %s %q is not a plain file name", kind, value)
+	}
+	return nil
+}
+
 // Validate ensures manifest contains valid metadata and install instructions.
 func (m *Manifest) Validate() error {
 	if strings.TrimSpace(m.Package.Name) == "" {
 		return errors.New("pkgline.toml: [package] name is required")
+	}
+	if err := ValidatePathComponent("[package] name", m.Package.Name); err != nil {
+		return err
 	}
 
 	lang := m.GetLanguage()
@@ -84,7 +131,46 @@ func (m *Manifest) Validate() error {
 	if m.GetExecutable() == "" {
 		return errors.New("pkgline.toml: package executable name could not be determined")
 	}
+	if err := ValidatePathComponent("[package] executable", m.rawExecutableName()); err != nil {
+		return err
+	}
 
+	// Script hooks are resolved relative to the cloned app root; they must not
+	// escape it either.
+	for kind, script := range map[string]string{
+		"[scripts] install":   m.Scripts.Install,
+		"[scripts] uninstall": m.Scripts.Uninstall,
+	} {
+		if strings.TrimSpace(script) == "" {
+			continue
+		}
+		if err := validateScriptPath(kind, script); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateScriptPath allows a relative sub-path (e.g. "scripts/install.sh")
+// but refuses anything absolute or climbing out of the app root.
+func validateScriptPath(kind, script string) error {
+	v := strings.TrimSpace(script)
+	// A leading separator of either kind, on any OS, before the OS-specific
+	// check below: filepath.IsAbs on Windows requires a drive letter or UNC
+	// prefix, so a Unix-style rooted path like "/tmp/evil.sh" is not absolute
+	// by Go's own definition there and sailed past this check entirely on a
+	// Windows build.
+	if strings.HasPrefix(v, "/") || strings.HasPrefix(v, "\\") {
+		return fmt.Errorf("pkgline.toml: %s %q must be relative to the package root", kind, script)
+	}
+	if filepath.IsAbs(v) || filepath.VolumeName(v) != "" {
+		return fmt.Errorf("pkgline.toml: %s %q must be relative to the package root", kind, script)
+	}
+	norm := filepath.ToSlash(filepath.Clean(v))
+	if norm == ".." || strings.HasPrefix(norm, "../") {
+		return fmt.Errorf("pkgline.toml: %s %q must not escape the package root", kind, script)
+	}
 	return nil
 }
 

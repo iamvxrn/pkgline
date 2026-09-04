@@ -59,6 +59,14 @@ func (ins *Installer) binFile(name string) string {
 	return filepath.Join(ins.cfg.BinDir, name)
 }
 
+// safeName rejects a package/binary name that would escape the directory it is
+// joined into. Names reach here from an untrusted pkgline.toml, from the
+// inventory file, and straight from the command line, so every path built from
+// one is checked rather than trusting the producer.
+func safeName(kind, name string) error {
+	return manifest.ValidatePathComponent(kind, name)
+}
+
 // Install fetches, compiles/executes, and records a new package.
 func (ins *Installer) Install(rawURI string) error {
 	return ins.InstallWith(rawURI, InstallOpts{})
@@ -285,6 +293,9 @@ func (ins *Installer) Run(rawURI string, opts InstallOpts, binArgs []string) err
 
 // Rollback restores a binary to its previous backup executable (.bak).
 func (ins *Installer) Rollback(pkgName string) error {
+	if err := safeName("package name", pkgName); err != nil {
+		return err
+	}
 	rec, exists, _ := ins.store.Get(pkgName)
 	if !exists {
 		return fmt.Errorf("package '%s' is not installed", pkgName)
@@ -293,6 +304,9 @@ func (ins *Installer) Rollback(pkgName string) error {
 	binName := rec.Executable
 	if binName == "" {
 		binName = pkgName
+	}
+	if err := safeName("executable name", binName); err != nil {
+		return err
 	}
 
 	binPath := ins.binFile(binName)
@@ -315,6 +329,9 @@ func (ins *Installer) Rollback(pkgName string) error {
 
 // Remove uninstalls a package and cleans up its files.
 func (ins *Installer) Remove(pkgName string) error {
+	if err := safeName("package name", pkgName); err != nil {
+		return err
+	}
 	rec, exists, _ := ins.store.Get(pkgName)
 	appDir := ins.appPath(pkgName)
 
@@ -327,12 +344,32 @@ func (ins *Installer) Remove(pkgName string) error {
 
 	ui.LogInfo("Removing package '%s'...", pkgName)
 
-	// Try reading manifest for uninstall script hook
+	// Try reading manifest for uninstall script hook.
+	//
+	// The hook only runs when pkgline actually installed the package with the
+	// matching [scripts] install hook. An uninstall script is written to undo
+	// what its own install script did; when the package was built natively the
+	// install script never ran, so running the uninstall half undoes something
+	// that never happened. In practice these scripts are the project's
+	// standalone curl-installer counterpart and delete a binary from a fixed
+	// location such as ~/.local/bin -- a file pkgline does not own and did not
+	// create.
 	m, err := manifest.LoadFromDir(appDir)
-	if err == nil && m.Scripts.Uninstall != "" {
-		ui.LogInfo("Executing uninstall script '%s'...", m.Scripts.Uninstall)
-		if err := RunUninstallScript(appDir, m.Scripts.Uninstall, m); err != nil {
-			ui.LogWarning("Uninstall script failed: %v", err)
+	if err == nil && strings.TrimSpace(m.Scripts.Uninstall) != "" {
+		installedByScript := rec.InstallType == "script"
+		if !exists {
+			// No inventory record to consult; fall back to the manifest, which
+			// mirrors the branch BuildAndInstall would have taken.
+			installedByScript = !m.IsNative()
+		}
+		if installedByScript {
+			ui.LogInfo("Executing uninstall script '%s'...", m.Scripts.Uninstall)
+			if err := RunUninstallScript(appDir, m.Scripts.Uninstall, m); err != nil {
+				ui.LogWarning("Uninstall script failed: %v", err)
+			}
+		} else {
+			ui.LogWarning("Skipping [scripts] uninstall = %q for '%s': it was built natively (%s), so its install script never ran.",
+				strings.TrimSpace(m.Scripts.Uninstall), pkgName, rec.InstallType)
 		}
 	}
 
@@ -345,6 +382,9 @@ func (ins *Installer) Remove(pkgName string) error {
 		binName = pkgName
 	}
 
+	if err := safeName("executable name", binName); err != nil {
+		return err
+	}
 	binPath := ins.binFile(binName)
 	_ = os.Remove(binPath)
 	_ = os.Remove(binPath + ".bak")

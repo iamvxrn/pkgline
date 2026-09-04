@@ -17,6 +17,7 @@ coverage.out
 
 # Agent / accidental dumps
 .backup_state/
+graphify-out/
 
 # OS / editors
 .DS_Store
